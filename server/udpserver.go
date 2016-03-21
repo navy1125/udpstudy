@@ -111,7 +111,7 @@ func (self *Server) Loop() {
 	for {
 		select {
 		case head := <-recvHeadCh:
-			fmt.Println(head.seq, self.sendData.lastok, self.sendData.maxok)
+			fmt.Println(head.seq, self.recvData.lastok, self.recvData.maxok)
 			if head.datasize == 0 {
 				ismax := false
 				if head.seq > self.sendData.maxok {
@@ -175,6 +175,7 @@ func (self *Server) Loop() {
 			}
 			for i := self.recvData.curack; i <= self.recvData.maxok; i++ {
 				if self.recvData.header[i] != nil && self.recvData.header[i].seq != 0 {
+					fmt.Println("单个确认包", i, self.recvData.lastok, self.recvData.maxok, self.recvData.header[i])
 					head := &UdpHeader{}
 					head.seq = self.recvData.header[i].seq
 					self.conn.WriteToUDP(head.Serialize(), self.addr)
