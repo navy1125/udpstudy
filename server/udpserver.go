@@ -107,7 +107,7 @@ func (self *Server) SendData(b []byte) bool {
 }
 
 func (self *Server) Loop() {
-	timersend := time.NewTicker(time.Millisecond)
+	timersend := time.NewTicker(time.Millisecond * 5)
 	for {
 		select {
 		case head := <-recvHeadCh:
@@ -145,8 +145,7 @@ func (self *Server) Loop() {
 						self.sendData.lastok = i
 					}
 				}
-			}
-			if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
+			} else if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
 				self.recvData.header[head.seq] = head
 				if head.seq > self.recvData.maxok {
 					self.recvData.maxok = head.seq
@@ -165,7 +164,7 @@ func (self *Server) Loop() {
 			}
 		case <-timersend.C:
 			if self.recvData.curack < self.recvData.lastok {
-				fmt.Println("wwww", self.recvData.curack, self.recvData.lastok, self.recvData.maxok)
+				fmt.Println("合并确认", self.recvData.curack, self.recvData.lastok, self.recvData.maxok, self.recvData.lastok-self.recvData.curack)
 				head := &UdpHeader{}
 				head.seq = self.recvData.lastok
 				head.bitmask |= 1

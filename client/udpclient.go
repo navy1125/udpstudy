@@ -145,8 +145,7 @@ func (self *Server) Loop() {
 						self.sendData.lastok = i
 					}
 				}
-			}
-			if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
+			} else if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
 				self.recvData.header[head.seq] = head
 				if head.seq > self.recvData.maxok {
 					self.recvData.maxok = head.seq
@@ -200,7 +199,7 @@ func (self *Server) Loop() {
 }
 
 func main() {
-	addr, err := net.ResolveUDPAddr("udp", ":10001")
+	addr, err := net.ResolveUDPAddr("udp", "14.17.104.56:10001")
 	if err != nil {
 		fmt.Println("net.ResolveUDPAddr err:", err)
 		return
