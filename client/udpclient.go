@@ -190,7 +190,7 @@ func (self *Server) Loop() {
 					}
 				}
 			}
-			if self.sendData.curseq < 10 {
+			if self.sendData.curseq < 65535 {
 				self.SendData([]byte("wanghaijun"))
 			}
 			self.CheckSendWaitData()

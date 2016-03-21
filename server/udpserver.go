@@ -111,6 +111,7 @@ func (self *Server) Loop() {
 	for {
 		select {
 		case head := <-recvHeadCh:
+			fmt.Println(head.seq, self.sendData.lastok, self.sendData.maxok)
 			if head.datasize == 0 {
 				ismax := false
 				if head.seq > self.sendData.maxok {
