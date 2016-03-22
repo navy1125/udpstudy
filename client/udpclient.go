@@ -113,37 +113,36 @@ func (self *Server) Loop() {
 		case head := <-recvHeadCh:
 			if head.datasize == 0 {
 				ismax := false
-				if head.seq > self.sendData.maxok {
+				if head.seq >= self.sendData.maxok {
 					ismax = true
 					self.sendData.maxok = head.seq
 				}
 				if head.bitmask&1 == 1 {
-					if self.sendData.lastok < head.seq {
-						for i := self.sendData.lastok + 1; i <= head.seq; i++ {
-							self.sendData.header[i] = nil
-						}
+					for i := self.sendData.lastok; i <= head.seq; i++ {
+						fmt.Println("确认包完成", i)
+						self.sendData.header[i] = nil
 					}
 				} else {
+					fmt.Println("确认包完成", head.seq)
 					self.sendData.header[head.seq] = nil
 				}
-				if self.sendData.lastok < self.sendData.maxok {
-					//这里尽量保证丢包后不要被多次重发,但是还是很难避免
-					if ismax {
-						for i := self.sendData.lastok + 1; i <= self.sendData.maxok; i++ {
-							if self.sendData.header[i] != nil {
-								//发现有更新的包已经确认,所有老包直接重发
-								//self.sendData.header[i] = int64(time.Now().UnixNano() / time.Millisecond.Nanoseconds())
-								self.conn.Write(self.sendData.header[i].Serialize())
-								fmt.Println("丢包重发")
-							}
-						}
-					}
-					for i := self.sendData.lastok + 1; i <= self.sendData.maxok; i++ {
+				//这里尽量保证丢包后不要被多次重发,但是还是很难避免
+				if ismax {
+					for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
 						if self.sendData.header[i] != nil {
-							break
+							//发现有更新的包已经确认,所有老包直接重发
+							//self.sendData.header[i] = int64(time.Now().UnixNano() / time.Millisecond.Nanoseconds())
+							self.conn.Write(self.sendData.header[i].Serialize())
+							fmt.Println("丢包重发")
 						}
-						self.sendData.lastok = i
 					}
+				}
+				fmt.Println("检测丢包", self.sendData.lastok, self.sendData.maxok)
+				for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
+					if self.sendData.header[i] != nil {
+						break
+					}
+					self.sendData.lastok = i
 				}
 			} else if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
 				self.recvData.header[head.seq] = head
@@ -180,17 +179,18 @@ func (self *Server) Loop() {
 					self.recvData.header[i].seq = 0
 				}
 			}
-			if self.sendData.lastok < self.sendData.maxok {
-				for i := self.sendData.lastok + 1; i <= self.sendData.maxok; i++ {
-					if self.sendData.header[i] != nil && int64(time.Now().UnixNano()/int64(time.Millisecond)) > self.sendData.header[i].timestamp+2000 {
-						//发现有更新的包已经确认,所有老包直接重发
-						self.sendData.header[i].timestamp = int64(time.Now().UnixNano() / int64(time.Millisecond))
-						self.conn.Write(self.sendData.header[i].Serialize())
-						fmt.Println("超时重发")
-					}
+			for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
+				if self.sendData.header[i] != nil {
+					fmt.Println("检测超时", int64(time.Now().UnixNano()/int64(time.Millisecond))-self.sendData.header[i].timestamp)
+				}
+				if self.sendData.header[i] != nil && int64(time.Now().UnixNano()/int64(time.Millisecond)) > self.sendData.header[i].timestamp+2000 {
+					//发现有更新的包已经确认,所有老包直接重发
+					self.sendData.header[i].timestamp = int64(time.Now().UnixNano() / int64(time.Millisecond))
+					self.conn.Write(self.sendData.header[i].Serialize())
+					fmt.Println("超时重发")
 				}
 			}
-			if self.sendData.curseq < 65535 {
+			if self.sendData.curseq < 1024 {
 				self.SendData([]byte("wanghaijun"))
 			}
 			self.CheckSendWaitData()
