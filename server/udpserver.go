@@ -156,9 +156,9 @@ func (self *Server) Loop() {
 				}
 			} else {
 				//收到过期数据,说明对方没有收到确认包,发一个
-				head.datasize = 0
+				head.data = head.data[0:0]
 				self.conn.WriteToUDP(head.Serialize(), self.addr)
-				fmt.Println("收到过期数据包", head.seq, self.recvData.lastok)
+				fmt.Println("收到过期数据包", head.seq, head.datasize, self.recvData.lastok)
 			}
 		case <-timersend.C:
 			if self.recvData.curack < self.recvData.lastok {

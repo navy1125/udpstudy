@@ -118,12 +118,12 @@ func (self *Server) Loop() {
 					self.sendData.maxok = head.seq
 				}
 				if head.bitmask&1 == 1 {
-					fmt.Println("确认包完成", self.sendData.lastok, head.seq)
+					//fmt.Println("确认包完成", self.sendData.lastok, head.seq)
 					for i := self.sendData.lastok; i <= head.seq; i++ {
 						self.sendData.header[i] = nil
 					}
 				} else {
-					fmt.Println("确认包完成", head.seq)
+					//fmt.Println("确认包完成", head.seq)
 					self.sendData.header[head.seq] = nil
 				}
 				//这里尽量保证丢包后不要被多次重发,但是还是很难避免
@@ -139,7 +139,6 @@ func (self *Server) Loop() {
 				}
 				fmt.Println("检测丢包", self.sendData.lastok, self.sendData.maxok)
 				for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
-					fmt.Println("wwwwwwwwww", self.sendData.header[i])
 					if self.sendData.header[i] != nil {
 						fmt.Println("等待乱序确认", self.sendData.lastok, self.sendData.maxok)
 						break
@@ -159,9 +158,9 @@ func (self *Server) Loop() {
 				}
 			} else {
 				//收到过期数据,说明对方没有收到确认包,发一个
-				head.datasize = 0
+				head.data = head.data[0:0]
 				self.conn.Write(head.Serialize())
-				fmt.Println("收到过期数据包", head.seq, self.recvData.lastok)
+				fmt.Println("收到过期数据包", head.seq, head.datasize, self.recvData.lastok)
 			}
 		case <-timersend.C:
 			if self.recvData.curack < self.recvData.lastok {
