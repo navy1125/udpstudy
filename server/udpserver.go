@@ -24,7 +24,7 @@ type UdpHeader struct {
 
 func (self *UdpHeader) Serialize() []byte {
 	self.datasize = byte(len(self.data))
-	buf := bytes.NewBuffer(make([]byte, 0, 6+self.datasize))
+	buf := bytes.NewBuffer(make([]byte, 0, 6+int(self.datasize)))
 	buf.WriteByte(self.datasize)
 	buf.WriteByte(self.bitmask)
 	binary.Write(buf, binary.LittleEndian, self.seq)
@@ -45,7 +45,7 @@ func (self *UdpHeader) Unserialize(b []byte, all int) int {
 	self.seq = uint16((int(seq[1]) << 8) + int(seq[0]))
 	self.ack = uint16((int(ack[1]) << 8) + int(ack[0]))
 	if self.datasize > 0 {
-		self.data = b[6 : 6+self.datasize]
+		self.data = b[6 : 6+int(self.datasize)]
 	}
 	fmt.Println(self.seq, self.ack, string(self.data))
 	return 6 + int(self.datasize)
@@ -90,9 +90,9 @@ func (self *Server) SendData(b []byte) bool {
 		head := &UdpHeader{}
 		head.seq = self.sendData.curseq
 		head.timestamp = int64(time.Now().UnixNano() / int64(time.Millisecond))
-		if bsize >= cur+256 {
-			head.data = b[cur : cur+256]
-			cur += 256
+		if bsize >= cur+255 {
+			head.data = b[cur : cur+255]
+			cur += 255
 		} else {
 			head.data = b[cur:bsize]
 			cur = bsize
@@ -133,7 +133,7 @@ func (self *Server) Loop() {
 							//发现有更新的包已经确认,所有老包直接重发
 							//self.sendData.header[i] = int64(time.Now().UnixNano() / time.Millisecond.Nanoseconds())
 							self.conn.WriteToUDP(self.sendData.header[i].Serialize(), self.addr)
-							fmt.Println("丢包重发")
+							fmt.Println("丢包重发", i, self.sendData.lastok, self.sendData.maxok)
 						}
 					}
 				}
@@ -187,7 +187,7 @@ func (self *Server) Loop() {
 					//发现有更新的包已经确认,所有老包直接重发
 					self.sendData.header[i].timestamp = int64(time.Now().UnixNano() / int64(time.Millisecond))
 					self.conn.WriteToUDP(self.sendData.header[i].Serialize(), self.addr)
-					fmt.Println("超时重发")
+					fmt.Println("超时重发", i, self.sendData.lastok, self.sendData.maxok)
 				}
 			}
 			self.CheckSendWaitData()
