@@ -99,16 +99,34 @@ func (self *UdpTask) SendData(b []byte) bool {
 		head := &UdpHeader{}
 		head.seq = self.sendData.curseq
 		head.timestamp = int64(time.Now().UnixNano() / int64(time.Millisecond))
+		offset := 0
 		if bsize >= cur+255 {
 			head.data = b[cur : cur+255]
-			cur += 255
+			offset = 255
 		} else {
 			head.data = b[cur:bsize]
-			cur = bsize
+			offset = bsize - cur
 		}
 		self.sendData.header[head.seq] = head
 		self.conn.SetWriteDeadline(time.Now().Add(time.Duration(1 * 2 * int64(time.Second))))
-		self.Write(head.Serialize())
+		n, err := self.Write(head.Serialize())
+		if err != nil {
+			fmt.Println("消息发送失败", self.sendData.curseq, n, err)
+		}
+		if n == 0 {
+			fmt.Println("缓冲区满,等待下次发送", self.sendData.curseq, n, err)
+			if self.wait == nil {
+				self.wait = bytes.NewBuffer(nil)
+			}
+			self.wait.Write(b[cur:])
+			return false
+		} else {
+			if n != offset+6 {
+				fmt.Println("发送缓冲区有bug,无解", n, offset, err)
+				panic("ddddd")
+			}
+			cur += offset
+		}
 		self.sendData.curseq++
 		if self.sendData.curseq == 65535 {
 			self.sendData.curseq = 0
@@ -116,11 +134,10 @@ func (self *UdpTask) SendData(b []byte) bool {
 	}
 	return true
 }
-func (self *UdpTask) Write(b []byte) {
+func (self *UdpTask) Write(b []byte) (int, error) {
 	n, _, err := self.conn.WriteMsgUDP(b, nil, self.addr)
-	fmt.Println("消息发送", self.sendData.curseq, n, err)
-	if err != nil {
-	}
+	//fmt.Println("消息发送", self.sendData.curseq, n, err)
+	return n, err
 }
 
 func (self *UdpTask) Loop() {
@@ -203,7 +220,7 @@ func (self *UdpTask) Loop() {
 					//发现有更新的包已经确认,所有老包直接重发
 					self.sendData.header[i].timestamp = int64(time.Now().UnixNano() / int64(time.Millisecond))
 					self.Write(self.sendData.header[i].Serialize())
-					fmt.Println("超时重发", i, self.sendData.lastok, self.sendData.maxok)
+					fmt.Println("超时重发", i, self.sendData.lastok, self.sendData.maxok, self.sendData.header[i].timestamp, int64(time.Now().UnixNano()/int64(time.Millisecond))-self.sendData.header[i].timestamp+2000)
 				}
 			}
 			if self.Test {
