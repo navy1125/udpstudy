@@ -1,4 +1,4 @@
-package main
+package udp
 
 import (
 	"bytes"
@@ -9,8 +9,7 @@ import (
 )
 
 var (
-	recvHeadCh = make(chan *UdpHeader, 1024)
-	HEADLEN    = 4
+	HEADLEN = 4
 )
 
 type UdpHeader struct {
@@ -58,15 +57,26 @@ type UdpData struct {
 	header [65536]*UdpHeader
 }
 
-type Server struct {
-	conn     *net.UDPConn
-	addr     *net.UDPAddr
-	recvData *UdpData
-	sendData *UdpData
-	wait     *bytes.Buffer
+type UdpTask struct {
+	conn       *net.UDPConn
+	addr       *net.UDPAddr
+	recvData   *UdpData
+	sendData   *UdpData
+	wait       *bytes.Buffer
+	recvHeadCh chan *UdpHeader
+	Test       bool
 }
 
-func (self *Server) CheckSendWaitData() bool {
+func NewUdpTask() *UdpTask {
+	task := &UdpTask{
+		recvData:   &UdpData{},
+		sendData:   &UdpData{},
+		recvHeadCh: make(chan *UdpHeader, 1024),
+	}
+	return task
+}
+
+func (self *UdpTask) CheckSendWaitData() bool {
 	if self.wait == nil {
 		return true
 	}
@@ -76,7 +86,7 @@ func (self *Server) CheckSendWaitData() bool {
 	return true
 }
 
-func (self *Server) SendData(b []byte) bool {
+func (self *UdpTask) SendData(b []byte) bool {
 	bsize := len(b)
 	for cur := 0; cur < bsize; {
 		if self.sendData.curseq+1 == self.sendData.lastok {
@@ -106,18 +116,18 @@ func (self *Server) SendData(b []byte) bool {
 	}
 	return true
 }
-func (self *Server) Write(b []byte) {
+func (self *UdpTask) Write(b []byte) {
 	n, _, err := self.conn.WriteMsgUDP(b, nil, self.addr)
 	fmt.Println("消息发送", self.sendData.curseq, n, err)
 	if err != nil {
 	}
 }
 
-func (self *Server) Loop() {
+func (self *UdpTask) Loop() {
 	timersend := time.NewTicker(time.Millisecond)
 	for {
 		select {
-		case head := <-recvHeadCh:
+		case head := <-self.recvHeadCh:
 			if head.datasize == 0 {
 				ismax := false
 				if head.seq >= self.sendData.maxok {
@@ -196,37 +206,24 @@ func (self *Server) Loop() {
 					fmt.Println("超时重发", i, self.sendData.lastok, self.sendData.maxok)
 				}
 			}
-			/*
+			if self.Test {
 				if self.sendData.curseq < 65535 {
-					self.SendData([]byte("wanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijun"))
+					self.SendData([]byte("wanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghai"))
 				}
-				// */
+			}
 			self.CheckSendWaitData()
 		}
 	}
 }
-
-func main() {
-	udpAddr, err := net.ResolveUDPAddr("udp", ":10001")
-	s := &Server{
-		recvData: &UdpData{},
-		sendData: &UdpData{},
-	}
-	s.conn, err = net.ListenUDP("udp", udpAddr)
-	if err != nil {
-		fmt.Println("net.ListenUDP err:", err)
-		return
-	}
-	go s.Loop()
+func (self *UdpTask) LoopRecv() {
 	b := make([]byte, 1024)
 	left := 0
 	for {
-		n, addr, err := s.conn.ReadFromUDP(b[left:])
+		n, addr, err := self.conn.ReadFromUDP(b[left:])
 		if err != nil {
 			fmt.Println("ERROR: ", err, n, addr)
 			return
 		}
-		s.addr = addr
 		all := n + left
 		for all >= 6 {
 			head := &UdpHeader{}
@@ -238,7 +235,11 @@ func main() {
 			} else {
 				break
 			}
-			recvHeadCh <- head
+			self.recvHeadCh <- head
 		}
 	}
+}
+func (self *UdpTask) Dial(addr *net.UDPAddr) (err error) {
+	self.conn, err = net.DialUDP("udp", nil, addr)
+	return err
 }
