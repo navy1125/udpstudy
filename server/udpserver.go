@@ -184,6 +184,7 @@ func (self *Server) Loop() {
 			}
 			if self.sendData.lastok < self.sendData.maxok {
 				for i := self.sendData.lastok + 1; i <= self.sendData.maxok; i++ {
+					fmt.Println("检测超时", int64(time.Now().UnixNano()/int64(time.Millisecond))-self.sendData.header[i].timestamp)
 					if self.sendData.header[i] != nil && int64(time.Now().UnixNano()/int64(time.Millisecond)) > self.sendData.header[i].timestamp+2000 {
 						//发现有更新的包已经确认,所有老包直接重发
 						self.sendData.header[i].timestamp = int64(time.Now().UnixNano() / int64(time.Millisecond))
