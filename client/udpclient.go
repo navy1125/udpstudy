@@ -47,7 +47,6 @@ func (self *UdpHeader) Unserialize(b []byte, all int) int {
 	if self.datasize > 0 {
 		self.data = b[6 : 6+self.datasize]
 	}
-	fmt.Println(self.seq, self.ack, string(self.data))
 	return 6 + int(self.datasize)
 }
 
@@ -97,6 +96,7 @@ func (self *Server) SendData(b []byte) bool {
 			head.data = b[cur:bsize]
 			cur = bsize
 		}
+		self.sendData.header[head.seq] = head
 		self.conn.Write(head.Serialize())
 		self.sendData.curseq++
 		if self.sendData.curseq == 65535 {
@@ -118,8 +118,8 @@ func (self *Server) Loop() {
 					self.sendData.maxok = head.seq
 				}
 				if head.bitmask&1 == 1 {
+					fmt.Println("确认包完成", self.sendData.lastok, head.seq)
 					for i := self.sendData.lastok; i <= head.seq; i++ {
-						fmt.Println("确认包完成", i)
 						self.sendData.header[i] = nil
 					}
 				} else {
@@ -139,7 +139,9 @@ func (self *Server) Loop() {
 				}
 				fmt.Println("检测丢包", self.sendData.lastok, self.sendData.maxok)
 				for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
+					fmt.Println("wwwwwwwwww", self.sendData.header[i])
 					if self.sendData.header[i] != nil {
+						fmt.Println("等待乱序确认", self.sendData.lastok, self.sendData.maxok)
 						break
 					}
 					self.sendData.lastok = i
@@ -163,7 +165,6 @@ func (self *Server) Loop() {
 			}
 		case <-timersend.C:
 			if self.recvData.curack < self.recvData.lastok {
-				fmt.Println("wwww", self.recvData.curack, self.recvData.lastok, self.recvData.maxok)
 				head := &UdpHeader{}
 				head.seq = self.recvData.lastok
 				head.bitmask |= 1
@@ -190,7 +191,7 @@ func (self *Server) Loop() {
 					fmt.Println("超时重发")
 				}
 			}
-			if self.sendData.curseq < 1024 {
+			if self.sendData.curseq < 4096 {
 				self.SendData([]byte("wanghaijun"))
 			}
 			self.CheckSendWaitData()

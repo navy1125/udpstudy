@@ -97,6 +97,7 @@ func (self *Server) SendData(b []byte) bool {
 			head.data = b[cur:bsize]
 			cur = bsize
 		}
+		self.sendData.header[head.seq] = head
 		self.conn.WriteToUDP(head.Serialize(), self.addr)
 		self.sendData.curseq++
 		if self.sendData.curseq == 65535 {
