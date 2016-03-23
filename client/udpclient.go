@@ -7,7 +7,8 @@ import (
 )
 
 func main() {
-	addr, err := net.ResolveUDPAddr("udp", "14.17.104.56:10001")
+	//addr, err := net.ResolveUDPAddr("udp", "14.17.104.56:10001")
+	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:10001")
 	if err != nil {
 		fmt.Println("net.ResolveUDPAddr err:", err)
 		return

@@ -64,7 +64,9 @@ type UdpTask struct {
 	sendData   *UdpData
 	wait       *bytes.Buffer
 	recvHeadCh chan *UdpHeader
+	waitHeader []*UdpHeader
 	Test       bool
+	is_server  bool
 }
 
 func NewUdpTask() *UdpTask {
@@ -77,6 +79,19 @@ func NewUdpTask() *UdpTask {
 }
 
 func (self *UdpTask) CheckSendWaitData() bool {
+	for _, head := range self.waitHeader {
+		n, _, err := self.conn.WriteMsgUDP(head.Serialize(), nil, self.addr)
+		if n != int(head.datasize)+6 {
+			fmt.Println("发送缓冲区有bug,无解", n, head.datasize+6, err)
+			if err == nil {
+				panic("ddddd")
+			}
+		}
+		if n == 0 {
+			return true
+		}
+		self.waitHeader = self.waitHeader[1:]
+	}
 	if self.wait == nil {
 		return true
 	}
@@ -109,22 +124,17 @@ func (self *UdpTask) SendData(b []byte) bool {
 		}
 		self.sendData.header[head.seq] = head
 		self.conn.SetWriteDeadline(time.Now().Add(time.Duration(1 * 2 * int64(time.Second))))
-		n, err := self.Write(head.Serialize())
+		n, err := self.sendMsg(head)
 		if err != nil {
 			fmt.Println("消息发送失败", self.sendData.curseq, n, err)
 		}
 		if n == 0 {
-			fmt.Println("缓冲区满,等待下次发送", self.sendData.curseq, n, err)
 			if self.wait == nil {
 				self.wait = bytes.NewBuffer(nil)
 			}
 			self.wait.Write(b[cur:])
 			return false
 		} else {
-			if n != offset+6 {
-				fmt.Println("发送缓冲区有bug,无解", n, offset, err)
-				panic("ddddd")
-			}
 			cur += offset
 		}
 		self.sendData.curseq++
@@ -134,46 +144,68 @@ func (self *UdpTask) SendData(b []byte) bool {
 	}
 	return true
 }
-func (self *UdpTask) Write(b []byte) (int, error) {
-	n, _, err := self.conn.WriteMsgUDP(b, nil, self.addr)
-	//fmt.Println("消息发送", self.sendData.curseq, n, err)
+func (self *UdpTask) sendMsg(head *UdpHeader) (int, error) {
+	if self.sendData.maxok-self.sendData.lastok >= 100 && head.seq != self.sendData.lastok {
+		fmt.Println("缓冲区满,等待下次发送", self.sendData.curseq, self.sendData.lastok, self.sendData.maxok)
+		return 0, nil
+	}
+	n, _, err := self.conn.WriteMsgUDP(head.Serialize(), nil, self.addr)
+	if n != int(head.datasize)+6 {
+		fmt.Println("发送缓冲区有bug,无解", n, head.datasize+6, err)
+		if err == nil {
+			panic("ddddd")
+		}
+	}
+	if n == 0 {
+		if err == nil {
+			panic("ddddd")
+		}
+		self.waitHeader = append(self.waitHeader, head)
+	} else {
+		fmt.Println("消息发送", self.sendData.curseq, n, err)
+	}
 	return n, err
 }
 
 func (self *UdpTask) Loop() {
 	timersend := time.NewTicker(time.Millisecond)
+	timersec := time.NewTicker(time.Second)
 	for {
 		select {
 		case head := <-self.recvHeadCh:
 			if head.datasize == 0 {
+				fmt.Println("收包", head.seq)
 				ismax := false
 				if head.seq >= self.sendData.maxok {
 					ismax = true
 					self.sendData.maxok = head.seq
 				}
 				if head.bitmask&1 == 1 {
-					//fmt.Println("确认包完成", self.sendData.lastok, head.seq)
+					fmt.Println("确认包完成", self.sendData.lastok, head.seq)
 					for i := self.sendData.lastok; i <= head.seq; i++ {
 						self.sendData.header[i] = nil
 					}
 				} else {
-					//fmt.Println("确认包完成", head.seq)
+					fmt.Println("确认包完成", head.seq)
 					self.sendData.header[head.seq] = nil
 				}
 				//这里尽量保证丢包后不要被多次重发,但是还是很难避免
-				if ismax {
+				if ismax || self.sendData.maxok-self.sendData.lastok >= 100 {
 					for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
 						if self.sendData.header[i] != nil {
 							//发现有更新的包已经确认,所有老包直接重发
 							//self.sendData.header[i] = int64(time.Now().UnixNano() / time.Millisecond.Nanoseconds())
-							self.Write(self.sendData.header[i].Serialize())
-							fmt.Println("丢包重发", i, self.sendData.lastok, self.sendData.maxok)
+							n, _ := self.sendMsg(self.sendData.header[i])
+							fmt.Println("丢包重发", i, n, self.sendData.lastok, self.sendData.maxok)
+							if n == 0 {
+								break
+							}
 						}
 					}
 				}
 				for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
 					if self.sendData.header[i] != nil {
-						fmt.Println("等待乱序确认", self.sendData.lastok, self.sendData.maxok)
+						//fmt.Println("等待乱序确认", self.sendData.lastok, self.sendData.maxok)
 						break
 					}
 					self.sendData.lastok = i
@@ -192,39 +224,47 @@ func (self *UdpTask) Loop() {
 			} else {
 				//收到过期数据,说明对方没有收到确认包,发一个
 				head.data = head.data[0:0]
-				self.Write(head.Serialize())
+				if len(self.waitHeader) == 0 {
+					self.sendMsg(head)
+				}
 				fmt.Println("收到过期数据包", head.seq, head.datasize, self.recvData.lastok)
 			}
+		case <-timersec.C:
+			fmt.Println("探测线程", self.sendData.lastok, self.sendData.maxok)
 		case <-timersend.C:
-			if self.recvData.curack < self.recvData.lastok {
-				head := &UdpHeader{}
-				head.seq = self.recvData.lastok
-				head.bitmask |= 1
-				self.Write(head.Serialize())
-				self.recvData.curack = self.recvData.lastok
-				self.recvData.header[self.recvData.curack].seq = 0
-			}
-			for i := self.recvData.curack; i <= self.recvData.maxok; i++ {
-				if self.recvData.header[i] != nil && self.recvData.header[i].seq != 0 {
+			if len(self.waitHeader) == 0 {
+				if self.recvData.curack < self.recvData.lastok {
 					head := &UdpHeader{}
-					head.seq = self.recvData.header[i].seq
-					self.Write(head.Serialize())
-					self.recvData.header[i].seq = 0
+					head.seq = self.recvData.lastok
+					head.bitmask |= 1
+					self.sendMsg(head)
+					self.recvData.curack = self.recvData.lastok
+					self.recvData.header[self.recvData.curack].seq = 0
+				}
+				for i := self.recvData.curack; i <= self.recvData.maxok; i++ {
+					if self.recvData.header[i] != nil && self.recvData.header[i].seq != 0 {
+						head := &UdpHeader{}
+						head.seq = self.recvData.header[i].seq
+						self.sendMsg(head)
+						self.recvData.header[i].seq = 0
+					}
 				}
 			}
-			for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
-				if self.sendData.header[i] != nil {
-					//fmt.Println("检测超时", int64(time.Now().UnixNano()/int64(time.Millisecond))-self.sendData.header[i].timestamp)
+			/*
+				for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
+					if self.sendData.header[i] != nil {
+						//fmt.Println("检测超时", int64(time.Now().UnixNano()/int64(time.Millisecond))-self.sendData.header[i].timestamp)
+					}
+					if self.sendData.header[i] != nil && int64(time.Now().UnixNano()/int64(time.Millisecond)) > self.sendData.header[i].timestamp+2000 {
+						//发现有更新的包已经确认,所有老包直接重发
+						self.sendData.header[i].timestamp = int64(time.Now().UnixNano() / int64(time.Millisecond))
+						self.sendMsg(self.sendData.header[i].Serialize())
+						fmt.Println("超时重发", i, self.sendData.lastok, self.sendData.maxok, self.sendData.header[i].timestamp, int64(time.Now().UnixNano()/int64(time.Millisecond))-self.sendData.header[i].timestamp+2000)
+					}
 				}
-				if self.sendData.header[i] != nil && int64(time.Now().UnixNano()/int64(time.Millisecond)) > self.sendData.header[i].timestamp+2000 {
-					//发现有更新的包已经确认,所有老包直接重发
-					self.sendData.header[i].timestamp = int64(time.Now().UnixNano() / int64(time.Millisecond))
-					self.Write(self.sendData.header[i].Serialize())
-					fmt.Println("超时重发", i, self.sendData.lastok, self.sendData.maxok, self.sendData.header[i].timestamp, int64(time.Now().UnixNano()/int64(time.Millisecond))-self.sendData.header[i].timestamp+2000)
-				}
-			}
+				// */
 			if self.Test {
-				if self.sendData.curseq < 65535 {
+				if self.sendData.maxok < 65534 {
 					self.SendData([]byte("wanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghai"))
 				}
 			}
@@ -240,6 +280,9 @@ func (self *UdpTask) LoopRecv() {
 		if err != nil {
 			fmt.Println("ERROR: ", err, n, addr)
 			return
+		}
+		if self.is_server {
+			self.addr = addr
 		}
 		all := n + left
 		for all >= 6 {
@@ -258,5 +301,10 @@ func (self *UdpTask) LoopRecv() {
 }
 func (self *UdpTask) Dial(addr *net.UDPAddr) (err error) {
 	self.conn, err = net.DialUDP("udp", nil, addr)
+	return err
+}
+func (self *UdpTask) Listen(addr *net.UDPAddr) (err error) {
+	self.conn, err = net.ListenUDP("udp", addr)
+	self.is_server = true
 	return err
 }
