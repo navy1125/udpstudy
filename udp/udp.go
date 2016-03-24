@@ -194,6 +194,7 @@ func (self *UdpTask) CheckSendAck() {
 				if now-self.sendData.header[i].time_ack < 10 {
 					break
 				} else {
+					fmt.Println("单个确认包完成", head.seq, now, self.sendData.header[i].time_ack, now-self.sendData.header[i].time_ack)
 					self.sendData.header[i] = nil
 					continue
 				}
@@ -233,7 +234,7 @@ func (self *UdpTask) Loop() {
 						self.sendData.header[i] = nil
 					}
 				} else {
-					//fmt.Println("确认包完成", head.seq)
+					//fmt.Println("单个确认包完成", head.seq)
 					if self.sendData.header[head.seq] != nil {
 						self.sendData.header[head.seq].time_ack = now
 						//self.sendData.header[head.seq] = nil
