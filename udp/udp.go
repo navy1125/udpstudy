@@ -234,7 +234,7 @@ func (self *UdpTask) Loop() {
 				} else {
 					fmt.Println("确认包完成", head.seq)
 					if self.sendData.header[head.seq] != nil {
-						//self.sendData.header[head.seq].time_ack = now
+						self.sendData.header[head.seq].time_ack = now
 						self.sendData.header[head.seq] = nil
 					}
 				}
