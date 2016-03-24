@@ -190,14 +190,20 @@ func (self *UdpTask) CheckSendAck() {
 	for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
 		//fmt.Println("尝试丢包重发", i, self.sendData.lastok, self.sendData.maxok)
 		if self.sendData.header[i] != nil {
+			if self.sendData.header[i].time_ack != 0 {
+				if now-self.sendData.header[i].time_ack < 10 {
+					break
+				} else {
+					self.sendData.header[i] = nil
+					continue
+				}
+			}
 			if now-self.sendData.header[i].time_send >= 10 {
 				//发现有更新的包已经确认,所有老包直接重发
-				if now-self.sendData.header[i].time_ack >= 10 {
-					n, _ := self.sendMsg(self.sendData.header[i])
-					fmt.Println("丢包重发", i, n, self.sendData.lastok, self.sendData.maxok)
-					if n == 0 {
-						break
-					}
+				n, _ := self.sendMsg(self.sendData.header[i])
+				fmt.Println("丢包重发", i, n, self.sendData.lastok, self.sendData.maxok)
+				if n == 0 {
+					break
 				}
 				self.num_resend++
 			}
@@ -208,9 +214,11 @@ func (self *UdpTask) Loop() {
 	timersend := time.NewTicker(time.Millisecond * 10)
 	timerack := time.NewTicker(time.Millisecond * 50)
 	timersec := time.NewTicker(time.Second)
+	now := int64(time.Now().UnixNano() / int64(time.Millisecond))
 	for {
 		select {
 		case head := <-self.recvHeadCh:
+			now = int64(time.Now().UnixNano() / int64(time.Millisecond))
 			if head.datasize == 0 {
 				fmt.Println("收包", head.seq)
 				ismax := false
@@ -225,7 +233,9 @@ func (self *UdpTask) Loop() {
 					}
 				} else {
 					fmt.Println("确认包完成", head.seq)
-					self.sendData.header[head.seq] = nil
+					if self.sendData.header[head.seq] != nil {
+						self.sendData.header[head.seq].time_ack = now
+					}
 				}
 				//这里尽量保证丢包后不要被多次重发,但是还是很难避免
 				if ismax || self.sendData.maxok-self.sendData.lastok >= 100 {
@@ -274,11 +284,11 @@ func (self *UdpTask) Loop() {
 					head.seq = self.recvData.lastok
 					head.bitmask |= 1
 					n, _ := self.sendMsg(head)
+					fmt.Println("批量确认:", self.recvData.curack, self.recvData.lastok)
 					if n != 0 {
 						self.recvData.curack = self.recvData.lastok
 						self.recvData.header[self.recvData.curack].seq = 0
 					}
-					fmt.Println("批量确认:", self.recvData.curack, self.recvData.lastok)
 					if self.recvData.lastok-self.recvData.curack >= 5 {
 						self.sendMsg(head)
 					}
