@@ -234,7 +234,8 @@ func (self *UdpTask) Loop() {
 				} else {
 					fmt.Println("确认包完成", head.seq)
 					if self.sendData.header[head.seq] != nil {
-						self.sendData.header[head.seq].time_ack = now
+						//self.sendData.header[head.seq].time_ack = now
+						self.sendData.header[head.seq] = nil
 					}
 				}
 				//这里尽量保证丢包后不要被多次重发,但是还是很难避免
