@@ -205,6 +205,7 @@ func (self *UdpTask) CheckSendAck() {
 				if n == 0 {
 					break
 				}
+				self.sendData.header[i].time_send = now + 40
 				self.num_resend++
 			}
 		}
@@ -227,12 +228,12 @@ func (self *UdpTask) Loop() {
 					self.sendData.maxok = head.seq
 				}
 				if head.bitmask&1 == 1 {
-					fmt.Println("确认包完成", self.sendData.lastok, head.seq)
+					fmt.Println("批量确认包完成", self.sendData.lastok, head.seq)
 					for i := self.sendData.lastok; i <= head.seq; i++ {
 						self.sendData.header[i] = nil
 					}
 				} else {
-					fmt.Println("确认包完成", head.seq)
+					//fmt.Println("确认包完成", head.seq)
 					if self.sendData.header[head.seq] != nil {
 						self.sendData.header[head.seq].time_ack = now
 						self.sendData.header[head.seq] = nil
@@ -269,9 +270,18 @@ func (self *UdpTask) Loop() {
 				}
 			} else {
 				//收到过期数据,说明对方没有收到确认包,发一个
-				head.data = head.data[0:0]
+				head1 := &UdpHeader{}
+				if head1.seq <= self.recvData.lastok {
+					head1.bitmask |= 1
+					head1.seq = self.recvData.lastok
+				} else if head1.seq == self.recvData.lastok+1 {
+					head1.bitmask |= 1
+					head1.seq = self.recvData.lastok + 1
+				} else {
+					head1.seq = head.seq
+				}
 				if len(self.waitHeader) == 0 {
-					self.sendMsg(head)
+					self.sendMsg(head1)
 				}
 				self.num_waste++
 				fmt.Println("收到过期数据包", head.seq, head.datasize, self.recvData.lastok, self.num_waste)
