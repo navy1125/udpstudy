@@ -180,7 +180,7 @@ func (self *UdpTask) CheckSendLostMsg() {
 			if n == 0 {
 				break
 			}
-			num_resend++
+			self.num_resend++
 		}
 	}
 }
@@ -234,7 +234,7 @@ func (self *UdpTask) Loop() {
 				if len(self.waitHeader) == 0 {
 					self.sendMsg(head)
 				}
-				num_waste++
+				self.num_waste++
 				fmt.Println("收到过期数据包", head.seq, head.datasize, self.recvData.lastok, self.num_waste)
 			}
 		case <-timersec.C:
