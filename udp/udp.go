@@ -67,6 +67,8 @@ type UdpTask struct {
 	waitHeader []*UdpHeader
 	Test       bool
 	is_server  bool
+	num_resend int
+	num_waste  int
 }
 
 func NewUdpTask() *UdpTask {
@@ -145,8 +147,8 @@ func (self *UdpTask) SendData(b []byte) bool {
 	return true
 }
 func (self *UdpTask) sendMsg(head *UdpHeader) (int, error) {
-	if self.sendData.maxok-self.sendData.lastok >= 100 && head.seq != self.sendData.lastok {
-		fmt.Println("缓冲区满,等待下次发送", self.sendData.curseq, self.sendData.lastok, self.sendData.maxok)
+	if self.sendData.maxok-self.sendData.lastok >= 100 && head.seq != self.sendData.lastok+1 {
+		fmt.Println("缓冲区满,等待下次发送", head.seq, self.sendData.curseq, self.sendData.lastok, self.sendData.maxok)
 		return 0, nil
 	}
 	n, _, err := self.conn.WriteMsgUDP(head.Serialize(), nil, self.addr)
@@ -162,13 +164,28 @@ func (self *UdpTask) sendMsg(head *UdpHeader) (int, error) {
 		}
 		self.waitHeader = append(self.waitHeader, head)
 	} else {
-		fmt.Println("消息发送", self.sendData.curseq, n, err)
+		head.timestamp = int64(time.Now().UnixNano() / time.Millisecond.Nanoseconds())
+		//fmt.Println("消息发送", self.sendData.curseq, n, err)
 	}
 	return n, err
 }
 
+func (self *UdpTask) CheckSendLostMsg() {
+	for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
+		//fmt.Println("尝试丢包重发", i, self.sendData.lastok, self.sendData.maxok)
+		if self.sendData.header[i] != nil && int64(time.Now().UnixNano()/int64(time.Millisecond))-self.sendData.header[i].timestamp >= 10 {
+			//发现有更新的包已经确认,所有老包直接重发
+			n, _ := self.sendMsg(self.sendData.header[i])
+			fmt.Println("丢包重发", i, n, self.sendData.lastok, self.sendData.maxok)
+			if n == 0 {
+				break
+			}
+			num_resend++
+		}
+	}
+}
 func (self *UdpTask) Loop() {
-	timersend := time.NewTicker(time.Millisecond)
+	timersend := time.NewTicker(time.Millisecond * 50)
 	timersec := time.NewTicker(time.Second)
 	for {
 		select {
@@ -191,17 +208,7 @@ func (self *UdpTask) Loop() {
 				}
 				//这里尽量保证丢包后不要被多次重发,但是还是很难避免
 				if ismax || self.sendData.maxok-self.sendData.lastok >= 100 {
-					for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
-						if self.sendData.header[i] != nil {
-							//发现有更新的包已经确认,所有老包直接重发
-							//self.sendData.header[i] = int64(time.Now().UnixNano() / time.Millisecond.Nanoseconds())
-							n, _ := self.sendMsg(self.sendData.header[i])
-							fmt.Println("丢包重发", i, n, self.sendData.lastok, self.sendData.maxok)
-							if n == 0 {
-								break
-							}
-						}
-					}
+					self.CheckSendLostMsg()
 				}
 				for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
 					if self.sendData.header[i] != nil {
@@ -227,11 +234,15 @@ func (self *UdpTask) Loop() {
 				if len(self.waitHeader) == 0 {
 					self.sendMsg(head)
 				}
-				fmt.Println("收到过期数据包", head.seq, head.datasize, self.recvData.lastok)
+				num_waste++
+				fmt.Println("收到过期数据包", head.seq, head.datasize, self.recvData.lastok, self.num_waste)
 			}
 		case <-timersec.C:
-			fmt.Println("探测线程", self.sendData.lastok, self.sendData.maxok)
+			fmt.Println("探测线程", self.sendData.lastok, self.sendData.maxok, self.num_resend, self.num_waste)
 		case <-timersend.C:
+			if self.sendData.maxok-self.sendData.lastok >= 100 {
+				self.CheckSendLostMsg()
+			}
 			if len(self.waitHeader) == 0 {
 				if self.recvData.curack < self.recvData.lastok {
 					head := &UdpHeader{}
