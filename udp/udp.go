@@ -313,7 +313,7 @@ func (self *UdpTask) Loop() {
 							fmt.Println("单个确认:", i, head.seq, self.recvData.curack, self.recvData.lastok)
 						}
 					} else {
-						fmt.Println("无效单个:", i, self.recvData.curack, self.recvData.lastok)
+						fmt.Println("无效单个:", i, self.recvData.curack, self.recvData.lastok, self.recvData.header[i])
 					}
 				}
 			}
