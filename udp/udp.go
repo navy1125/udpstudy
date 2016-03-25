@@ -313,7 +313,11 @@ func (self *UdpTask) Loop() {
 							fmt.Println("单个确认:", i, head.seq, self.recvData.curack, self.recvData.lastok)
 						}
 					} else {
-						fmt.Println("无效单个:", i, self.recvData.curack, self.recvData.lastok, self.recvData.header[i])
+						if self.recvData.header[i] != nil {
+							fmt.Println("无效单个:", i, self.recvData.header[i].seq, self.recvData.curack, self.recvData.lastok)
+						} else {
+							fmt.Println("无效单个:", i, self.recvData.header[i], self.recvData.curack, self.recvData.lastok)
+						}
 					}
 				}
 			}
