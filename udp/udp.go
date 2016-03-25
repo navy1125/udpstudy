@@ -13,13 +13,14 @@ var (
 )
 
 type UdpHeader struct {
-	datasize  byte
-	bitmask   byte
-	seq       uint16
-	ack       uint16
-	time_send int64
-	time_ack  int64
-	data      []byte
+	datasize     byte
+	bitmask      byte
+	seq          uint16
+	ack          uint16
+	time_send    int64
+	time_ack     int64
+	resend_times int64
+	data         []byte
 }
 
 func (self *UdpHeader) Serialize() []byte {
@@ -59,24 +60,29 @@ type UdpData struct {
 }
 
 type UdpTask struct {
-	conn       *net.UDPConn
-	addr       *net.UDPAddr
-	recvData   *UdpData
-	sendData   *UdpData
-	wait       *bytes.Buffer
-	recvHeadCh chan *UdpHeader
-	waitHeader []*UdpHeader
-	Test       bool
-	is_server  bool
-	num_resend int
-	num_waste  int
+	conn        *net.UDPConn
+	addr        *net.UDPAddr
+	recvData    *UdpData
+	sendData    *UdpData
+	wait        *bytes.Buffer
+	recvDataCh  chan *UdpHeader
+	recvAckCh   chan *UdpHeader
+	waitHeader  []*UdpHeader
+	Test        bool
+	is_server   bool
+	num_resend  int
+	num_waste   int
+	num_ack     int
+	num_acklist int
+	ping        int64
 }
 
 func NewUdpTask() *UdpTask {
 	task := &UdpTask{
 		recvData:   &UdpData{},
 		sendData:   &UdpData{},
-		recvHeadCh: make(chan *UdpHeader, 1024),
+		recvDataCh: make(chan *UdpHeader, 1024),
+		recvAckCh:  make(chan *UdpHeader, 1024),
 	}
 	return task
 }
@@ -198,7 +204,8 @@ func (self *UdpTask) CheckSendLostMsg() {
 				if n == 0 {
 					break
 				}
-				self.sendData.header[i].time_send = now + 40
+				self.sendData.header[i].time_send = now + self.sendData.header[i].resend_times*50 + 40
+				self.sendData.header[i].resend_times++
 				self.num_resend++
 			}
 		}
@@ -223,33 +230,34 @@ func (self *UdpTask) Loop() {
 	now := int64(time.Now().UnixNano() / int64(time.Millisecond))
 	for {
 		select {
-		case head := <-self.recvHeadCh:
+		case head := <-self.recvAckCh:
 			now = int64(time.Now().UnixNano() / int64(time.Millisecond))
-			if head.datasize == 0 {
-				fmt.Println("收包", head.seq)
-				ismax := false
-				if head.seq >= self.sendData.maxok {
-					ismax = true
-					self.sendData.maxok = head.seq
+			fmt.Println("收包", head.seq)
+			ismax := false
+			if head.seq >= self.sendData.maxok {
+				ismax = true
+				self.sendData.maxok = head.seq
+				self.ping = now - head.time_send
+			}
+			if head.bitmask&1 == 1 {
+				fmt.Println("批量确认包完成", self.sendData.lastok, head.seq)
+				for i := self.sendData.lastok; i <= head.seq; i++ {
+					self.sendData.header[i] = nil
 				}
-				if head.bitmask&1 == 1 {
-					fmt.Println("批量确认包完成", self.sendData.lastok, head.seq)
-					for i := self.sendData.lastok; i <= head.seq; i++ {
-						self.sendData.header[i] = nil
-					}
-				} else {
-					fmt.Println("收到单个确认包", head.seq)
-					if self.sendData.header[head.seq] != nil {
-						self.sendData.header[head.seq].time_ack = now
-						//self.sendData.header[head.seq] = nil
-					}
+			} else {
+				fmt.Println("收到单个确认包", head.seq)
+				if self.sendData.header[head.seq] != nil {
+					self.sendData.header[head.seq].time_ack = now
+					//self.sendData.header[head.seq] = nil
 				}
-				//这里尽量保证丢包后不要被多次重发,但是还是很难避免
-				if ismax || self.sendData.maxok-self.sendData.lastok >= 100 {
-					self.CheckSendLostMsg()
-				}
-				self.CheckLastok()
-			} else if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
+			}
+			//这里尽量保证丢包后不要被多次重发,但是还是很难避免
+			if ismax || self.sendData.maxok-self.sendData.lastok >= 100 {
+				self.CheckSendLostMsg()
+			}
+			self.CheckLastok()
+		case head := <-self.recvDataCh:
+			if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
 				self.recvData.header[head.seq] = head
 				if head.seq > self.recvData.maxok {
 					self.recvData.maxok = head.seq
@@ -286,7 +294,7 @@ func (self *UdpTask) Loop() {
 				fmt.Println("收到过期数据包", head.seq, head.datasize, self.recvData.lastok, self.num_waste)
 			}
 		case <-timersec.C:
-			fmt.Println("探测线程", self.sendData.lastok, self.sendData.maxok, self.num_resend, self.num_waste)
+			fmt.Println("探测线程", self.sendData.lastok, self.sendData.maxok, self.num_resend, self.num_waste, self.num_ack, self.num_acklist, self.ping)
 		case <-timerack.C:
 			if len(self.waitHeader) == 0 {
 				if self.recvData.curack < self.recvData.lastok {
@@ -294,13 +302,14 @@ func (self *UdpTask) Loop() {
 					head.seq = self.recvData.lastok
 					head.bitmask |= 1
 					n, _ := self.sendMsg(head)
-					fmt.Println("批量确认:", self.recvData.curack, self.recvData.lastok)
 					if n != 0 {
+						self.num_acklist++
 						self.recvData.curack = self.recvData.lastok
 						self.recvData.header[self.recvData.curack].seq = 0
 					}
 					if self.recvData.lastok-self.recvData.curack >= 5 {
 						self.sendMsg(head)
+						self.num_acklist++
 					}
 				}
 				for i := self.recvData.curack; i <= self.recvData.maxok; i++ {
@@ -310,11 +319,7 @@ func (self *UdpTask) Loop() {
 						n, _ := self.sendMsg(head)
 						if n != 0 {
 							self.recvData.header[i].seq = 0
-							fmt.Println("单个确认:", i, head.seq, self.recvData.curack, self.recvData.lastok)
-						}
-					} else {
-						if self.recvData.header[i] != nil {
-							fmt.Println("无效单个:", i, self.recvData.header[i], self.recvData.curack, self.recvData.lastok)
+							self.num_ack++
 						}
 					}
 				}
@@ -368,7 +373,11 @@ func (self *UdpTask) LoopRecv() {
 			} else {
 				break
 			}
-			self.recvHeadCh <- head
+			if head.datasize > 0 {
+				self.recvDataCh <- head
+			} else {
+				self.recvAckCh <- head
+			}
 		}
 	}
 }
