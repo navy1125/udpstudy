@@ -73,6 +73,7 @@ type UdpTask struct {
 	num_resend  int
 	num_waste   int
 	num_recv    int
+	num_send    int
 	num_ack     int
 	num_acklist int
 	ping        int64
@@ -175,6 +176,9 @@ func (self *UdpTask) sendMsg(head *UdpHeader) (int, error) {
 		head.time_send = int64(time.Now().UnixNano() / time.Millisecond.Nanoseconds())
 		//fmt.Println("消息发送", self.sendData.curseq, n, err)
 	}
+	if head.datasize != 0 {
+		self.num_send++
+	}
 	return n, err
 }
 func (self *UdpTask) CheckSendLostMsg() {
@@ -184,7 +188,7 @@ func (self *UdpTask) CheckSendLostMsg() {
 		if self.sendData.header[resendmax] != nil {
 			if self.sendData.header[resendmax].time_ack != 0 {
 				if now-self.sendData.header[resendmax].time_ack < 10 {
-					fmt.Println("等待单个确认包完成", resendmax, self.sendData.lastok, now, self.sendData.header[resendmax].time_ack, now-self.sendData.header[resendmax].time_ack)
+					//fmt.Println("等待单个确认包完成", resendmax, self.sendData.lastok, now, self.sendData.header[resendmax].time_ack, now-self.sendData.header[resendmax].time_ack)
 					break
 				} else {
 					fmt.Println("单个确认包完成", resendmax, self.sendData.lastok, now, self.sendData.header[resendmax].time_ack, now-self.sendData.header[resendmax].time_ack)
@@ -300,9 +304,9 @@ func (self *UdpTask) Loop() {
 			}
 		case <-timersec.C:
 			if self.Test == false {
-				fmt.Println("探测线程", self.num_resend, self.num_waste, self.num_recv, self.num_ack, self.num_acklist)
+				fmt.Println("探测线程", self.num_waste, self.num_recv, self.num_acklist, self.num_ack)
 			} else {
-				fmt.Println("探测线程", self.sendData.lastok, self.sendData.maxok, self.num_resend, self.num_recv, self.ping)
+				fmt.Println("探测线程", self.sendData.lastok, self.sendData.maxok, self.num_send, self.num_recv, self.num_resend, self.ping)
 			}
 		case <-timerack.C:
 			if len(self.waitHeader) == 0 {
