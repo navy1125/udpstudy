@@ -310,8 +310,10 @@ func (self *UdpTask) Loop() {
 						n, _ := self.sendMsg(head)
 						if n != 0 {
 							self.recvData.header[i].seq = 0
-							fmt.Println("单个确认:", head.seq, self.recvData.curack, self.recvData.lastok)
+							fmt.Println("单个确认:", i, head.seq, self.recvData.curack, self.recvData.lastok)
 						}
+					} else {
+						fmt.Println("无效单个:", i, self.recvData.curack, self.recvData.lastok)
 					}
 				}
 			}
