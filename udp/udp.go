@@ -72,6 +72,7 @@ type UdpTask struct {
 	is_server   bool
 	num_resend  int
 	num_waste   int
+	num_recv    int
 	num_ack     int
 	num_acklist int
 	ping        int64
@@ -231,13 +232,16 @@ func (self *UdpTask) Loop() {
 	for {
 		select {
 		case head := <-self.recvAckCh:
+			self.num_recv++
 			now = int64(time.Now().UnixNano() / int64(time.Millisecond))
 			fmt.Println("收包", head.seq)
 			ismax := false
 			if head.seq >= self.sendData.maxok {
 				ismax = true
 				self.sendData.maxok = head.seq
-				self.ping = now - head.time_send
+				if self.sendData.header[head.seq] != nil {
+					self.ping = now - self.sendData.header[head.seq].time_send
+				}
 			}
 			if head.bitmask&1 == 1 {
 				fmt.Println("批量确认包完成", self.sendData.lastok, head.seq)
@@ -258,6 +262,7 @@ func (self *UdpTask) Loop() {
 			self.CheckLastok()
 		case head := <-self.recvDataCh:
 			if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
+				self.num_recv++
 				self.recvData.header[head.seq] = head
 				if head.seq > self.recvData.maxok {
 					self.recvData.maxok = head.seq
@@ -294,7 +299,11 @@ func (self *UdpTask) Loop() {
 				fmt.Println("收到过期数据包", head.seq, head.datasize, self.recvData.lastok, self.num_waste)
 			}
 		case <-timersec.C:
-			fmt.Println("探测线程", self.sendData.lastok, self.sendData.maxok, self.num_resend, self.num_waste, self.num_ack, self.num_acklist, self.ping)
+			if self.Test == false {
+				fmt.Println("探测线程", self.num_resend, self.num_waste, self.num_recv, self.num_ack, self.num_acklist)
+			} else {
+				fmt.Println("探测线程", self.sendData.lastok, self.sendData.maxok, self.num_resend, self.num_recv, self.ping)
+			}
 		case <-timerack.C:
 			if len(self.waitHeader) == 0 {
 				if self.recvData.curack < self.recvData.lastok {
