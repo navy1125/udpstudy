@@ -304,7 +304,7 @@ func (self *UdpTask) Loop() {
 			}
 		case <-timersec.C:
 			if self.Test == false {
-				fmt.Println("探测线程", self.num_waste, self.num_recv, self.num_acklist, self.num_ack)
+				fmt.Println("探测线程", self.num_recv, self.num_acklist, self.num_ack, self.num_waste)
 			} else {
 				fmt.Println("探测线程", self.sendData.lastok, self.sendData.maxok, self.num_send, self.num_recv, self.num_resend, self.ping)
 			}
