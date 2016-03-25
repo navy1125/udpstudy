@@ -314,8 +314,6 @@ func (self *UdpTask) Loop() {
 						}
 					} else {
 						if self.recvData.header[i] != nil {
-							fmt.Println("无效单个:", i, self.recvData.header[i].seq, self.recvData.curack, self.recvData.lastok)
-						} else {
 							fmt.Println("无效单个:", i, self.recvData.header[i], self.recvData.curack, self.recvData.lastok)
 						}
 					}
