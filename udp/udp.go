@@ -170,39 +170,30 @@ func (self *UdpTask) sendMsg(head *UdpHeader) (int, error) {
 	}
 	return n, err
 }
-
 func (self *UdpTask) CheckSendLostMsg() {
-	for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
-		//fmt.Println("尝试丢包重发", i, self.sendData.lastok, self.sendData.maxok)
-		if self.sendData.header[i] != nil && int64(time.Now().UnixNano()/int64(time.Millisecond))-self.sendData.header[i].time_send >= 10 {
-			//发现有更新的包已经确认,所有老包直接重发
-			n, _ := self.sendMsg(self.sendData.header[i])
-			fmt.Println("丢包重发", i, n, self.sendData.lastok, self.sendData.maxok)
-			if n == 0 {
-				break
-			}
-			self.num_resend++
-		}
-	}
-}
-func (self *UdpTask) CheckSendAck() {
 	now := int64(time.Now().UnixNano() / int64(time.Millisecond))
-	for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
-		//fmt.Println("尝试丢包重发", i, self.sendData.lastok, self.sendData.maxok)
-		if self.sendData.header[i] != nil {
-			if self.sendData.header[i].time_ack != 0 {
-				if now-self.sendData.header[i].time_ack < 10 {
+	resendmax := 0
+	for resendmax := self.sendData.lastok; resendmax <= self.sendData.maxok; resendmax++ {
+		if self.sendData.header[resendmax] != nil {
+			if self.sendData.header[resendmax].time_ack != 0 {
+				if now-self.sendData.header[resendmax].time_ack < 10 {
+					fmt.Println("等待单个确认包完成", resendmax, now, self.sendData.header[resendmax].time_ack, now-self.sendData.header[resendmax].time_ack)
 					break
 				} else {
-					fmt.Println("单个确认包完成", i, now, self.sendData.header[i].time_ack, now-self.sendData.header[i].time_ack)
-					self.sendData.header[i] = nil
+					fmt.Println("单个确认包完成", resendmax, now, self.sendData.header[resendmax].time_ack, now-self.sendData.header[resendmax].time_ack)
+					self.sendData.header[resendmax] = nil
 					continue
 				}
 			}
+		}
+	}
+	for i := self.sendData.lastok; i < uint16(resendmax); i++ {
+		//fmt.Println("尝试丢包重发", i, self.sendData.lastok, self.sendData.maxok)
+		if self.sendData.header[i] != nil {
 			if now-self.sendData.header[i].time_send >= 10 {
 				//发现有更新的包已经确认,所有老包直接重发
 				n, _ := self.sendMsg(self.sendData.header[i])
-				fmt.Println("丢包重发", i, n, self.sendData.lastok, self.sendData.maxok)
+				fmt.Println("丢包重发", i, n, self.sendData.lastok, self.sendData.maxok, now, self.sendData.header[i].time_ack, now-self.sendData.header[i].time_ack)
 				if n == 0 {
 					break
 				}
@@ -245,8 +236,11 @@ func (self *UdpTask) Loop() {
 					self.CheckSendLostMsg()
 				}
 				for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
+					//if self.sendData.header[i] != nil && self.sendData.header[i].time_ack != 0 {
 					if self.sendData.header[i] != nil {
-						//fmt.Println("等待乱序确认", self.sendData.lastok, self.sendData.maxok)
+						if self.sendData.maxok-self.sendData.lastok >= 100 {
+							fmt.Println("等待乱序确认异常", self.sendData.lastok, self.sendData.maxok)
+						}
 						break
 					}
 					self.sendData.lastok = i
