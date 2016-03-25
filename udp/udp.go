@@ -172,16 +172,17 @@ func (self *UdpTask) sendMsg(head *UdpHeader) (int, error) {
 }
 func (self *UdpTask) CheckSendLostMsg() {
 	now := int64(time.Now().UnixNano() / int64(time.Millisecond))
-	resendmax := 0
-	for resendmax := self.sendData.lastok; resendmax <= self.sendData.maxok; resendmax++ {
+	resendmax := uint16(0)
+	for resendmax = self.sendData.lastok; resendmax <= self.sendData.maxok; resendmax++ {
 		if self.sendData.header[resendmax] != nil {
 			if self.sendData.header[resendmax].time_ack != 0 {
 				if now-self.sendData.header[resendmax].time_ack < 10 {
-					fmt.Println("等待单个确认包完成", resendmax, now, self.sendData.header[resendmax].time_ack, now-self.sendData.header[resendmax].time_ack)
+					fmt.Println("等待单个确认包完成", resendmax, self.sendData.lastok, now, self.sendData.header[resendmax].time_ack, now-self.sendData.header[resendmax].time_ack)
 					break
 				} else {
-					fmt.Println("单个确认包完成", resendmax, now, self.sendData.header[resendmax].time_ack, now-self.sendData.header[resendmax].time_ack)
+					fmt.Println("单个确认包完成", resendmax, self.sendData.lastok, now, self.sendData.header[resendmax].time_ack, now-self.sendData.header[resendmax].time_ack)
 					self.sendData.header[resendmax] = nil
+					self.CheckLastok()
 					continue
 				}
 			}
@@ -201,6 +202,18 @@ func (self *UdpTask) CheckSendLostMsg() {
 				self.num_resend++
 			}
 		}
+	}
+}
+func (self *UdpTask) CheckLastok() {
+	for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
+		//if self.sendData.header[i] != nil && self.sendData.header[i].time_ack != 0 {
+		if self.sendData.header[i] != nil {
+			if self.sendData.maxok-self.sendData.lastok >= 100 {
+				fmt.Println("等待乱序确认异常", self.sendData.lastok, self.sendData.maxok)
+			}
+			break
+		}
+		self.sendData.lastok = i
 	}
 }
 func (self *UdpTask) Loop() {
@@ -235,16 +248,7 @@ func (self *UdpTask) Loop() {
 				if ismax || self.sendData.maxok-self.sendData.lastok >= 100 {
 					self.CheckSendLostMsg()
 				}
-				for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
-					//if self.sendData.header[i] != nil && self.sendData.header[i].time_ack != 0 {
-					if self.sendData.header[i] != nil {
-						if self.sendData.maxok-self.sendData.lastok >= 100 {
-							fmt.Println("等待乱序确认异常", self.sendData.lastok, self.sendData.maxok)
-						}
-						break
-					}
-					self.sendData.lastok = i
-				}
+				self.CheckLastok()
 			} else if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
 				self.recvData.header[head.seq] = head
 				if head.seq > self.recvData.maxok {
@@ -306,6 +310,7 @@ func (self *UdpTask) Loop() {
 						n, _ := self.sendMsg(head)
 						if n != 0 {
 							self.recvData.header[i].seq = 0
+							fmt.Println("单个确认:", head.seq, self.recvData.curack, self.recvData.lastok)
 						}
 					}
 				}
