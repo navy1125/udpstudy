@@ -25,7 +25,9 @@ type UdpHeader struct {
 }
 
 func (self *UdpHeader) Serialize() []byte {
-	self.datasize = byte(len(self.data))
+	if self.datasize == 0 {
+		self.datasize = byte(len(self.data))
+	}
 	buf := bytes.NewBuffer(make([]byte, 0, 6+int(self.datasize)))
 	buf.WriteByte(self.datasize)
 	buf.WriteByte(self.bitmask)
@@ -285,9 +287,6 @@ func (self *UdpTask) FillLastokAckHead(head *UdpHeader) {
 		} else {
 			break
 		}
-	}
-	if head.datasize != 0 {
-		fmt.Println("self.FillLastokAckHead", head.datasize)
 	}
 }
 func (self *UdpTask) Loop() {
