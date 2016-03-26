@@ -60,23 +60,25 @@ type UdpData struct {
 }
 
 type UdpTask struct {
-	conn          *net.UDPConn
-	addr          *net.UDPAddr
-	recvData      *UdpData
-	sendData      *UdpData
-	wait          *bytes.Buffer
-	recvDataCh    chan *UdpHeader
-	recvAckCh     chan *UdpHeader
-	Test          bool
-	is_server     bool
-	num_resend    int
-	num_waste     int
-	num_recv_data int
-	num_recv_ack  int
-	num_send      int
-	num_ack       int
-	num_acklist   int
-	ping          int64
+	conn             *net.UDPConn
+	addr             *net.UDPAddr
+	recvData         *UdpData
+	sendData         *UdpData
+	wait             *bytes.Buffer
+	recvDataCh       chan *UdpHeader
+	recvAckCh        chan *UdpHeader
+	Test             bool
+	is_server        bool
+	num_resend       int
+	num_waste        int
+	num_recv_data    int
+	num_recv_ack     int
+	num_recv_acklist int
+	num_send         int
+	num_ack          int
+	num_acklist      int
+	num_timeout      int
+	ping             int64
 }
 
 func NewUdpTask() *UdpTask {
@@ -237,7 +239,6 @@ func (self *UdpTask) Loop() {
 	for {
 		select {
 		case head := <-self.recvAckCh:
-			self.num_recv_ack++
 			now = int64(time.Now().UnixNano() / int64(time.Millisecond))
 			//fmt.Println("收包", head.seq)
 			ismax := false
@@ -249,11 +250,13 @@ func (self *UdpTask) Loop() {
 				}
 			}
 			if head.bitmask&1 == 1 {
+				self.num_recv_acklist++
 				//fmt.Println("批量确认包完成", self.sendData.lastok, head.seq)
 				for i := self.sendData.lastok; i <= head.seq; i++ {
 					self.sendData.header[i] = nil
 				}
 			} else {
+				self.num_recv_ack++
 				//fmt.Println("收到单个确认包", head.seq)
 				if self.sendData.header[head.seq] != nil {
 					self.sendData.header[head.seq].time_ack = now
@@ -302,7 +305,7 @@ func (self *UdpTask) Loop() {
 				fmt.Println("收到过期数据包", head.seq, head.datasize, self.recvData.lastok, self.num_waste)
 			}
 		case <-timersec.C:
-			fmt.Println(fmt.Sprintf("探测线程:完成确认序号:%5d,最大确认序号:%5d,接收数据包:%5d,接受确认包:%5d,发送数据包:%5d,重发数据包:%5d,发送批量确认包:%5d,发送单个数据包:%5d,重复接收包:%5d,最新PING:%5d", self.sendData.lastok, self.sendData.maxok, self.num_recv_data, self.num_recv_ack, self.num_send, self.num_resend, self.num_acklist, self.num_ack, self.num_waste, self.ping))
+			fmt.Println(fmt.Sprintf("完成确认序号:%5d,最大确认序号:%5d,接收包:%5d,发送包:%5d,重发包:%5d,超时包:%5d,接受ACKLIST:%5d,接受ACK:%5d,发送ACKLIST:%5d,发送ACK:%5d,重复接收包:%5d,最新PING:%5d", self.sendData.lastok, self.sendData.maxok, self.num_recv_data, self.num_send, self.num_resend, self.num_timeout, self.num_recv_ack, self.num_recv_acklist, self.num_acklist, self.num_ack, self.num_waste, self.ping))
 		case <-timerack.C:
 			if self.recvData.curack < self.recvData.lastok {
 				head := &UdpHeader{}
@@ -333,23 +336,25 @@ func (self *UdpTask) Loop() {
 		case <-timersend.C:
 			now = int64(time.Now().UnixNano() / int64(time.Millisecond))
 			self.CheckSendLostMsg()
-			n := 0
+			cansend := true
 			for i := self.sendData.lastok; i <= self.sendData.curseq; i++ {
 				if self.sendData.header[i] != nil {
 					//fmt.Println("检测超时", now-self.sendData.header[i].time_send)
 					timeout := self.sendData.header[i].time_send + self.ping + 100
 					if now > timeout {
 						//发现有更新的包已经确认,所有老包直接重发
-						n, _ = self.sendMsg(self.sendData.header[i])
+						n, _ := self.sendMsg(self.sendData.header[i])
 						if n == 0 {
+							cansend = true
 							break
 						}
-						fmt.Println("超时重发", i, self.sendData.lastok, self.sendData.maxok, self.sendData.curseq, now-timeout)
+						self.num_timeout++
+						fmt.Println("超时重发", i, self.sendData.lastok, self.sendData.maxok, self.sendData.curseq, self.num_timeout, now-timeout+self.ping+100)
 						self.sendData.header[i].time_send = now + self.ping
 					}
 				}
 			}
-			if self.Test && n > 0 {
+			if self.Test && cansend {
 				if self.sendData.maxok < 65534 {
 					self.SendData([]byte("wanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghai"))
 				}
