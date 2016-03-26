@@ -286,6 +286,9 @@ func (self *UdpTask) FillLastokAckHead(head *UdpHeader) {
 			break
 		}
 	}
+	if head.datasize != 0 {
+		fmt.Println("self.FillLastokAckHead", head.datasize)
+	}
 }
 func (self *UdpTask) Loop() {
 	timersend := time.NewTicker(time.Millisecond * 10)
@@ -408,9 +411,6 @@ func (self *UdpTask) Loop() {
 				head.seq = self.recvData.lastok
 				head.bitmask |= 1
 				self.FillLastokAckHead(head)
-				if head.datasize != 0 {
-					fmt.Println("self.FillLastokAckHead", head.datasize)
-				}
 				n, _ := self.sendAck(head)
 				if n != 0 {
 					self.num_acklist++
