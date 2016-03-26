@@ -68,6 +68,7 @@ type UdpTask struct {
 	recvDataCh       chan *UdpHeader
 	recvAckCh        chan *UdpHeader
 	last_ack         *UdpHeader
+	last_ack_times   int
 	Test             bool
 	is_server        bool
 	num_resend       int
@@ -183,7 +184,12 @@ func (self *UdpTask) CheckReSendAck() {
 	if self.last_ack != nil {
 		n, _, _ := self.conn.WriteMsgUDP(self.last_ack.Serialize(), nil, self.addr)
 		if n != 0 {
-			self.last_ack = nil
+			if self.last_ack_times == 0 {
+				fmt.Println("CheckReSendAck", self.last_ack.seq)
+				self.last_ack = nil
+			} else {
+				self.last_ack_times--
+			}
 			self.num_acklist++
 		}
 	}
@@ -406,6 +412,7 @@ func (self *UdpTask) Loop() {
 					self.recvData.header[self.recvData.curack].seq = 0
 					if self.recvData.lastok-self.recvData.curack >= 3 {
 						self.last_ack = head
+						self.last_ack_times = int((self.recvData.lastok - self.recvData.curack) / 32)
 						timercheckack.Reset(time.Millisecond * 10)
 					}
 				}
