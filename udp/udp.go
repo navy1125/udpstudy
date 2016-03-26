@@ -45,9 +45,9 @@ func (self *UdpHeader) Unserialize(b []byte, all int) int {
 	if self.bitmask&1 == 1 {
 		datasize = self.GetHeadSize()
 	} else {
-		datasize = int(self.datasize) + self.GetHeadSize()
+		datasize = int(self.datasize)
 	}
-	if all < datasize {
+	if all < datasize+self.GetHeadSize() {
 		fmt.Println("Unserialize: ", all, datasize)
 		return 0
 	}
