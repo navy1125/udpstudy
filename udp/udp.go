@@ -13,14 +13,15 @@ var (
 )
 
 type UdpHeader struct {
-	datasize     byte
-	bitmask      byte
-	seq          uint16
-	ack          uint16
-	time_send    int64
-	time_ack     int64
-	resend_times int64
-	data         []byte
+	datasize      byte
+	bitmask       byte
+	seq           uint16
+	ack           uint16
+	time_send     int64
+	time_ack      int64
+	lost_times    int64
+	timeout_times int64
+	data          []byte
 }
 
 func (self *UdpHeader) Serialize() []byte {
@@ -89,7 +90,7 @@ func NewUdpTask() *UdpTask {
 		sendData:   &UdpData{},
 		recvDataCh: make(chan *UdpHeader, 1024),
 		recvAckCh:  make(chan *UdpHeader, 1024),
-		ping:       10,
+		ping:       100,
 	}
 	return task
 }
@@ -116,7 +117,6 @@ func (self *UdpTask) SendData(b []byte) bool {
 		}
 		head := &UdpHeader{}
 		head.seq = self.sendData.curseq
-		head.time_send = int64(time.Now().UnixNano() / int64(time.Millisecond))
 		offset := 0
 		if bsize >= cur+255 {
 			head.data = b[cur : cur+255]
@@ -223,8 +223,8 @@ func (self *UdpTask) CheckSendLostMsg() {
 				if n == 0 {
 					break
 				}
-				self.sendData.header[i].time_send = now + self.sendData.header[i].resend_times*50 + 40
-				self.sendData.header[i].resend_times++
+				self.sendData.header[i].time_send = now + self.sendData.header[i].lost_times*50 + 40
+				self.sendData.header[i].lost_times++
 				self.num_resend++
 			}
 		}
@@ -303,8 +303,11 @@ func (self *UdpTask) Loop() {
 			if head.seq >= self.sendData.maxok {
 				ismax = true
 				self.sendData.maxok = head.seq
-				if self.sendData.header[head.seq] != nil {
+				if self.sendData.header[head.seq] != nil && self.sendData.header[head.seq].timeout_times == 0 {
 					self.ping = now - self.sendData.header[head.seq].time_send
+					if self.ping < 0 {
+						fmt.Println("PING值错误:", head.seq, now, self.sendData.header[head.seq].time_send, self.ping, self.sendData.header[head.seq].timeout_times)
+					}
 				}
 			}
 			if head.bitmask&1 == 1 {
@@ -347,7 +350,7 @@ func (self *UdpTask) Loop() {
 						if isset_state(head.bitmask, i) {
 							next := head.seq + i
 							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
-								fmt.Println("bitmask补漏成功:", head.seq, head.bitmask)
+								//fmt.Println("bitmask补漏成功:", head.seq, head.bitmask)
 								self.sendData.header[head.seq].time_ack = now
 							}
 						}
@@ -405,6 +408,9 @@ func (self *UdpTask) Loop() {
 				head.seq = self.recvData.lastok
 				head.bitmask |= 1
 				self.FillLastokAckHead(head)
+				if head.datasize != 0 {
+					fmt.Println("self.FillLastokAckHead", head.datasize)
+				}
 				n, _ := self.sendAck(head)
 				if n != 0 {
 					self.num_acklist++
@@ -438,7 +444,7 @@ func (self *UdpTask) Loop() {
 			self.CheckSendLostMsg()
 			cansend := true
 			for i := self.sendData.lastok; i <= self.sendData.curseq; i++ {
-				if self.sendData.header[i] != nil && self.sendData.header[i].time_ack == 0 {
+				if self.sendData.header[i] != nil && self.sendData.header[i].time_ack == 0 && self.sendData.header[i].lost_times == 0 {
 					//fmt.Println("检测超时", now-self.sendData.header[i].time_send)
 					timeout := self.sendData.header[i].time_send + self.ping + 100
 					if now > timeout {
@@ -449,7 +455,8 @@ func (self *UdpTask) Loop() {
 							break
 						}
 						self.num_timeout++
-						fmt.Println("超时重发", i, self.sendData.lastok, self.sendData.maxok, self.sendData.curseq, self.num_timeout, now-timeout+self.ping+100)
+						fmt.Println("超时重发", i, self.sendData.lastok, self.sendData.maxok, self.sendData.curseq, self.num_timeout, now-timeout+self.ping+100, self.ping)
+						self.sendData.header[i].timeout_times++
 						self.sendData.header[i].time_send = now + self.ping
 					}
 				}
