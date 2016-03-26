@@ -331,20 +331,20 @@ func (self *UdpTask) Loop() {
 				}
 			}
 		case <-timersend.C:
+			now = int64(time.Now().UnixNano() / int64(time.Millisecond))
 			self.CheckSendLostMsg()
-			/*
-				for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
-					if self.sendData.header[i] != nil {
-						//fmt.Println("检测超时", int64(time.Now().UnixNano()/int64(time.Millisecond))-self.sendData.header[i].time_send)
-					}
-					if self.sendData.header[i] != nil && int64(time.Now().UnixNano()/int64(time.Millisecond)) > self.sendData.header[i].time_send+2000 {
+			for i := self.sendData.lastok; i <= self.sendData.curseq; i++ {
+				if self.sendData.header[i] != nil {
+					//fmt.Println("检测超时", now-self.sendData.header[i].time_send)
+					timeout := self.sendData.header[i].time_send + self.ping + 100
+					if now > timeout {
 						//发现有更新的包已经确认,所有老包直接重发
-						self.sendData.header[i].time_send = int64(time.Now().UnixNano() / int64(time.Millisecond))
-						self.sendMsg(self.sendData.header[i].Serialize())
-						fmt.Println("超时重发", i, self.sendData.lastok, self.sendData.maxok, self.sendData.header[i].time_send, int64(time.Now().UnixNano()/int64(time.Millisecond))-self.sendData.header[i].time_send+2000)
+						self.sendData.header[i].time_send = now
+						self.sendMsg(self.sendData.header[i])
+						fmt.Println("超时重发", i, self.sendData.lastok, self.sendData.maxok, self.sendData.curseq, self.sendData.header[i].time_send, timeout)
 					}
 				}
-				// */
+			}
 			if self.Test {
 				if self.sendData.maxok < 65534 {
 					self.SendData([]byte("wanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghai"))
