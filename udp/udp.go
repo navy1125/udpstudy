@@ -67,6 +67,7 @@ type UdpTask struct {
 	wait             *bytes.Buffer
 	recvDataCh       chan *UdpHeader
 	recvAckCh        chan *UdpHeader
+	last_ack         *UdpHeader
 	Test             bool
 	is_server        bool
 	num_resend       int
@@ -176,12 +177,16 @@ func (self *UdpTask) sendAck(head *UdpHeader) (int, error) {
 			panic("ddddd")
 		}
 	}
-	if n == 0 {
-		if err == nil {
-			panic("ddddd")
-		}
+	if n != 0 && (head.bitmask&1) == 1 {
+		self.last_ack = head
 	}
 	return n, err
+}
+func (self *UdpTask) CheckReSendAck() {
+	n, _, _ := self.conn.WriteMsgUDP(self.last_ack.Serialize(), nil, self.addr)
+	if n != 0 {
+		self.num_acklist++
+	}
 }
 func (self *UdpTask) CheckSendLostMsg() {
 	now := int64(time.Now().UnixNano() / int64(time.Millisecond))
@@ -317,10 +322,8 @@ func (self *UdpTask) Loop() {
 					self.recvData.curack = self.recvData.lastok
 					self.recvData.header[self.recvData.curack].seq = 0
 				}
-				if self.recvData.lastok-self.recvData.curack >= 5 {
-					self.sendAck(head)
-					self.num_acklist++
-				}
+			} else {
+				self.CheckReSendAck()
 			}
 			for i := self.recvData.curack; i <= self.recvData.maxok; i++ {
 				if self.recvData.header[i] != nil && self.recvData.header[i].seq != 0 {
