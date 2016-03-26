@@ -261,7 +261,7 @@ func (self *UdpTask) FillOkAckHead(head *UdpHeader) {
 }
 func (self *UdpTask) FillMaxokAckHead(head *UdpHeader) {
 	head.bitmask = 0
-	for i := uint16(8); i <= 2; i-- {
+	for i := uint16(8); i > 2; i-- {
 		next := head.seq - i
 		if self.recvData.header[next] != nil {
 			head.bitmask = set_state(head.bitmask, i)
@@ -340,7 +340,7 @@ func (self *UdpTask) Loop() {
 					}
 				}
 				if head.bitmask != 0 {
-					for i := uint16(8); i <= 2; i-- {
+					for i := uint16(8); i >= 2; i-- {
 						if isset_state(head.bitmask, i) {
 							next := head.seq + i
 							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
