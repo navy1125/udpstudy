@@ -67,7 +67,6 @@ type UdpTask struct {
 	wait          *bytes.Buffer
 	recvDataCh    chan *UdpHeader
 	recvAckCh     chan *UdpHeader
-	waitHeader    []*UdpHeader
 	Test          bool
 	is_server     bool
 	num_resend    int
@@ -91,19 +90,6 @@ func NewUdpTask() *UdpTask {
 }
 
 func (self *UdpTask) CheckSendWaitData() bool {
-	for _, head := range self.waitHeader {
-		n, _, err := self.conn.WriteMsgUDP(head.Serialize(), nil, self.addr)
-		if n != int(head.datasize)+6 {
-			fmt.Println("发送缓冲区有bug,无解", n, head.datasize+6, err)
-			if err == nil {
-				panic("ddddd")
-			}
-		}
-		if n == 0 {
-			return true
-		}
-		self.waitHeader = self.waitHeader[1:]
-	}
 	if self.wait == nil {
 		return true
 	}
@@ -172,13 +158,25 @@ func (self *UdpTask) sendMsg(head *UdpHeader) (int, error) {
 		if err == nil {
 			panic("ddddd")
 		}
-		self.waitHeader = append(self.waitHeader, head)
 	} else {
 		head.time_send = int64(time.Now().UnixNano() / time.Millisecond.Nanoseconds())
 		//fmt.Println("消息发送", self.sendData.curseq, n, err)
 	}
-	if head.datasize != 0 {
-		self.num_send++
+	self.num_send++
+	return n, err
+}
+func (self *UdpTask) sendAck(head *UdpHeader) (int, error) {
+	n, _, err := self.conn.WriteMsgUDP(head.Serialize(), nil, self.addr)
+	if n != int(head.datasize)+6 {
+		fmt.Println("发送缓冲区有bug,无解", n, head.datasize+6, err)
+		if err == nil {
+			panic("ddddd")
+		}
+	}
+	if n == 0 {
+		if err == nil {
+			panic("ddddd")
+		}
 	}
 	return n, err
 }
@@ -275,7 +273,7 @@ func (self *UdpTask) Loop() {
 				} else {
 					head1 := &UdpHeader{}
 					head1.seq = head.seq
-					n, _ := self.sendMsg(head1)
+					n, _ := self.sendAck(head1)
 					if n != 0 {
 						head.seq = 0
 					}
@@ -298,48 +296,41 @@ func (self *UdpTask) Loop() {
 				} else {
 					head1.seq = head.seq
 				}
-				if len(self.waitHeader) == 0 {
-					self.sendMsg(head1)
-				}
+				self.sendAck(head1)
 				self.num_waste++
 				fmt.Println("收到过期数据包", head.seq, head.datasize, self.recvData.lastok, self.num_waste)
 			}
 		case <-timersec.C:
-			fmt.Println(fmt.Sprintf("探测线程:完成确认序号:%8d,最大确认序号:%8d,接收数据包:%8d,接受确认包:%8d,发送数据包:%8d,重发数据包:%8d,发送批量确认包:%8d,发送单个数据包:%8d,重复接收包:%8d,最新PING:", self.sendData.lastok, self.sendData.maxok, self.num_recv_data, self.num_recv_ack, self.num_send, self.num_resend, self.num_acklist, self.num_ack, self.num_waste, self.ping))
+			fmt.Println(fmt.Sprintf("探测线程:完成确认序号:%5d,最大确认序号:%5d,接收数据包:%5d,接受确认包:%5d,发送数据包:%5d,重发数据包:%5d,发送批量确认包:%5d,发送单个数据包:%5d,重复接收包:%5d,最新PING:%5d", self.sendData.lastok, self.sendData.maxok, self.num_recv_data, self.num_recv_ack, self.num_send, self.num_resend, self.num_acklist, self.num_ack, self.num_waste, self.ping))
 		case <-timerack.C:
-			if len(self.waitHeader) == 0 {
-				if self.recvData.curack < self.recvData.lastok {
-					head := &UdpHeader{}
-					head.seq = self.recvData.lastok
-					head.bitmask |= 1
-					n, _ := self.sendMsg(head)
-					if n != 0 {
-						self.num_acklist++
-						self.recvData.curack = self.recvData.lastok
-						self.recvData.header[self.recvData.curack].seq = 0
-					}
-					if self.recvData.lastok-self.recvData.curack >= 5 {
-						self.sendMsg(head)
-						self.num_acklist++
-					}
+			if self.recvData.curack < self.recvData.lastok {
+				head := &UdpHeader{}
+				head.seq = self.recvData.lastok
+				head.bitmask |= 1
+				n, _ := self.sendAck(head)
+				if n != 0 {
+					self.num_acklist++
+					self.recvData.curack = self.recvData.lastok
+					self.recvData.header[self.recvData.curack].seq = 0
 				}
-				for i := self.recvData.curack; i <= self.recvData.maxok; i++ {
-					if self.recvData.header[i] != nil && self.recvData.header[i].seq != 0 {
-						head := &UdpHeader{}
-						head.seq = self.recvData.header[i].seq
-						n, _ := self.sendMsg(head)
-						if n != 0 {
-							self.recvData.header[i].seq = 0
-							self.num_ack++
-						}
+				if self.recvData.lastok-self.recvData.curack >= 5 {
+					self.sendAck(head)
+					self.num_acklist++
+				}
+			}
+			for i := self.recvData.curack; i <= self.recvData.maxok; i++ {
+				if self.recvData.header[i] != nil && self.recvData.header[i].seq != 0 {
+					head := &UdpHeader{}
+					head.seq = self.recvData.header[i].seq
+					n, _ := self.sendAck(head)
+					if n != 0 {
+						self.recvData.header[i].seq = 0
+						self.num_ack++
 					}
 				}
 			}
 		case <-timersend.C:
-			if self.sendData.maxok-self.sendData.lastok >= 100 {
-				fmt.Println("CheckSendLostMsg")
-				self.CheckSendLostMsg()
-			}
+			self.CheckSendLostMsg()
 			/*
 				for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
 					if self.sendData.header[i] != nil {
