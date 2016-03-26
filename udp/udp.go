@@ -267,9 +267,6 @@ func (self *UdpTask) FillMaxokAckHead(head *UdpHeader) {
 			head.bitmask = set_state(head.bitmask, i)
 		}
 	}
-	if head.bitmask != 0 {
-		fmt.Println("FillMaxokAckHead", head.bitmask)
-	}
 }
 func (self *UdpTask) FillLastokAckHead(head *UdpHeader) {
 	head.datasize = 0
