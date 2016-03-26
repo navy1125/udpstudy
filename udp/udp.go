@@ -85,6 +85,7 @@ func NewUdpTask() *UdpTask {
 		sendData:   &UdpData{},
 		recvDataCh: make(chan *UdpHeader, 1024),
 		recvAckCh:  make(chan *UdpHeader, 1024),
+		ping:       10,
 	}
 	return task
 }
@@ -186,7 +187,7 @@ func (self *UdpTask) CheckSendLostMsg() {
 	for resendmax = self.sendData.lastok; resendmax <= self.sendData.maxok; resendmax++ {
 		if self.sendData.header[resendmax] != nil {
 			if self.sendData.header[resendmax].time_ack != 0 {
-				if now-self.sendData.header[resendmax].time_ack < 10 {
+				if now-self.sendData.header[resendmax].time_ack < self.ping {
 					//fmt.Println("等待单个确认包完成", resendmax, self.sendData.lastok, now, self.sendData.header[resendmax].time_ack, now-self.sendData.header[resendmax].time_ack)
 					break
 				} else {
@@ -201,7 +202,7 @@ func (self *UdpTask) CheckSendLostMsg() {
 	for i := self.sendData.lastok; i < uint16(resendmax); i++ {
 		//fmt.Println("尝试丢包重发", i, self.sendData.lastok, self.sendData.maxok)
 		if self.sendData.header[i] != nil {
-			if now-self.sendData.header[i].time_send >= 10 {
+			if now-self.sendData.header[i].time_send >= self.ping {
 				//发现有更新的包已经确认,所有老包直接重发
 				oldtime := self.sendData.header[i].time_send
 				n, _ := self.sendMsg(self.sendData.header[i])
