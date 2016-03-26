@@ -183,9 +183,11 @@ func (self *UdpTask) sendAck(head *UdpHeader) (int, error) {
 	return n, err
 }
 func (self *UdpTask) CheckReSendAck() {
-	n, _, _ := self.conn.WriteMsgUDP(self.last_ack.Serialize(), nil, self.addr)
-	if n != 0 {
-		self.num_acklist++
+	if last_ack != nil {
+		n, _, _ := self.conn.WriteMsgUDP(self.last_ack.Serialize(), nil, self.addr)
+		if n != 0 {
+			self.num_acklist++
+		}
 	}
 }
 func (self *UdpTask) CheckSendLostMsg() {
