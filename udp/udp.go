@@ -258,6 +258,9 @@ func (self *UdpTask) FillOkAckHead(head *UdpHeader) {
 			break
 		}
 	}
+	if head.datasize != 0 {
+		fmt.Println("FillLastokAckHead", head.datasize)
+	}
 }
 func (self *UdpTask) FillMaxokAckHead(head *UdpHeader) {
 	head.bitmask = 0
@@ -266,6 +269,9 @@ func (self *UdpTask) FillMaxokAckHead(head *UdpHeader) {
 		if self.recvData.header[next] != nil {
 			head.bitmask = set_state(head.bitmask, i)
 		}
+	}
+	if head.bitmask != 0 {
+		fmt.Println("FillMaxokAckHead", head.bitmask)
 	}
 }
 func (self *UdpTask) FillLastokAckHead(head *UdpHeader) {
@@ -279,6 +285,9 @@ func (self *UdpTask) FillLastokAckHead(head *UdpHeader) {
 		} else {
 			break
 		}
+	}
+	if head.datasize != 0 {
+		fmt.Println("FillLastokAckHead", head.datasize)
 	}
 }
 func (self *UdpTask) Loop() {
@@ -312,6 +321,7 @@ func (self *UdpTask) Loop() {
 						if isset_state(head.datasize, i) {
 							next := head.seq + i + 1
 							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
+								fmt.Println("last datasize补漏成功:", head.seq, head.bitmask)
 								self.sendData.header[head.seq].time_ack = now
 							}
 						}
@@ -329,6 +339,7 @@ func (self *UdpTask) Loop() {
 						if isset_state(head.datasize, i) {
 							next := head.seq + i
 							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
+								fmt.Println("datasize补漏成功:", head.seq, head.bitmask)
 								self.sendData.header[head.seq].time_ack = now
 							}
 						}
@@ -339,6 +350,7 @@ func (self *UdpTask) Loop() {
 						if isset_state(head.bitmask, i) {
 							next := head.seq + i
 							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
+								fmt.Println("bitmask补漏成功:", head.seq, head.bitmask)
 								self.sendData.header[head.seq].time_ack = now
 							}
 						}
