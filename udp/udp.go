@@ -177,9 +177,6 @@ func (self *UdpTask) sendAck(head *UdpHeader) (int, error) {
 			panic("ddddd")
 		}
 	}
-	if n != 0 && (head.bitmask&1) == 1 {
-		self.last_ack = head
-	}
 	return n, err
 }
 func (self *UdpTask) CheckReSendAck() {
@@ -312,7 +309,7 @@ func (self *UdpTask) Loop() {
 				fmt.Println("收到过期数据包", head.seq, head.datasize, self.recvData.lastok, self.num_waste)
 			}
 		case <-timersec.C:
-			fmt.Println(fmt.Sprintf("完成确认序号:%5d,最大确认序号:%5d,接收包:%5d,发送包:%5d,重发包:%5d,超时包:%5d,接受ACKLIST:%5d,接受ACK:%5d,发送ACKLIST:%5d,发送ACK:%5d,重复接收包:%5d,最新PING:%5d", self.sendData.lastok, self.sendData.maxok, self.num_recv_data, self.num_send, self.num_resend, self.num_timeout, self.num_recv_ack, self.num_recv_acklist, self.num_acklist, self.num_ack, self.num_waste, self.ping))
+			fmt.Println(fmt.Sprintf("完成确认序号:%5d,最大确认序号:%5d,接收包:%5d,发送包:%5d,重发包:%5d,超时包:%5d,接受ACKLIST:%5d,接受ACK:%5d,发送ACKLIST:%5d,发送ACK:%5d,重复接收包:%5d,最新PING:%5d", self.sendData.lastok, self.sendData.maxok, self.num_recv_data, self.num_send, self.num_resend, self.num_timeout, self.num_recv_acklist, self.num_recv_ack, self.num_acklist, self.num_ack, self.num_waste, self.ping))
 		case <-timerack.C:
 			if self.recvData.curack < self.recvData.lastok {
 				head := &UdpHeader{}
@@ -323,6 +320,9 @@ func (self *UdpTask) Loop() {
 					self.num_acklist++
 					self.recvData.curack = self.recvData.lastok
 					self.recvData.header[self.recvData.curack].seq = 0
+					if self.recvData.lastok-self.recvData.curack >= 3 {
+						self.last_ack = head
+					}
 				}
 			} else {
 				self.CheckReSendAck()
