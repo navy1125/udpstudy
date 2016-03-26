@@ -60,23 +60,24 @@ type UdpData struct {
 }
 
 type UdpTask struct {
-	conn        *net.UDPConn
-	addr        *net.UDPAddr
-	recvData    *UdpData
-	sendData    *UdpData
-	wait        *bytes.Buffer
-	recvDataCh  chan *UdpHeader
-	recvAckCh   chan *UdpHeader
-	waitHeader  []*UdpHeader
-	Test        bool
-	is_server   bool
-	num_resend  int
-	num_waste   int
-	num_recv    int
-	num_send    int
-	num_ack     int
-	num_acklist int
-	ping        int64
+	conn          *net.UDPConn
+	addr          *net.UDPAddr
+	recvData      *UdpData
+	sendData      *UdpData
+	wait          *bytes.Buffer
+	recvDataCh    chan *UdpHeader
+	recvAckCh     chan *UdpHeader
+	waitHeader    []*UdpHeader
+	Test          bool
+	is_server     bool
+	num_resend    int
+	num_waste     int
+	num_recv_data int
+	num_recv_ack  int
+	num_send      int
+	num_ack       int
+	num_acklist   int
+	ping          int64
 }
 
 func NewUdpTask() *UdpTask {
@@ -156,7 +157,7 @@ func (self *UdpTask) SendData(b []byte) bool {
 	return true
 }
 func (self *UdpTask) sendMsg(head *UdpHeader) (int, error) {
-	if self.sendData.maxok-self.sendData.lastok >= 100 && head.seq != self.sendData.lastok+1 {
+	if head.seq-self.sendData.lastok >= 100 && head.seq != self.sendData.lastok+1 {
 		fmt.Println("缓冲区满,等待下次发送", head.seq, self.sendData.curseq, self.sendData.lastok, self.sendData.maxok)
 		return 0, nil
 	}
@@ -204,8 +205,9 @@ func (self *UdpTask) CheckSendLostMsg() {
 		if self.sendData.header[i] != nil {
 			if now-self.sendData.header[i].time_send >= 10 {
 				//发现有更新的包已经确认,所有老包直接重发
+				oldtime := self.sendData.header[i].time_send
 				n, _ := self.sendMsg(self.sendData.header[i])
-				fmt.Println("丢包重发", i, n, self.sendData.lastok, self.sendData.maxok, now, self.sendData.header[i].time_ack, now-self.sendData.header[i].time_ack)
+				fmt.Println("丢包重发", i, n, self.sendData.lastok, self.sendData.maxok, now, oldtime, now-oldtime)
 				if n == 0 {
 					break
 				}
@@ -236,9 +238,9 @@ func (self *UdpTask) Loop() {
 	for {
 		select {
 		case head := <-self.recvAckCh:
-			self.num_recv++
+			self.num_recv_ack++
 			now = int64(time.Now().UnixNano() / int64(time.Millisecond))
-			fmt.Println("收包", head.seq)
+			//fmt.Println("收包", head.seq)
 			ismax := false
 			if head.seq >= self.sendData.maxok {
 				ismax = true
@@ -266,7 +268,7 @@ func (self *UdpTask) Loop() {
 			self.CheckLastok()
 		case head := <-self.recvDataCh:
 			if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
-				self.num_recv++
+				self.num_recv_data++
 				self.recvData.header[head.seq] = head
 				if head.seq > self.recvData.maxok {
 					self.recvData.maxok = head.seq
@@ -303,11 +305,7 @@ func (self *UdpTask) Loop() {
 				fmt.Println("收到过期数据包", head.seq, head.datasize, self.recvData.lastok, self.num_waste)
 			}
 		case <-timersec.C:
-			if self.Test == false {
-				fmt.Println("探测线程", self.num_recv, self.num_acklist, self.num_ack, self.num_waste)
-			} else {
-				fmt.Println("探测线程", self.sendData.lastok, self.sendData.maxok, self.num_send, self.num_recv, self.num_resend, self.ping)
-			}
+			fmt.Println(fmt.Sprintf("探测线程:完成确认序号:%8d,最大确认序号:%8d,接收数据包:%8d,接受确认包:%8d,发送数据包:%8d,重发数据包:%8d,发送批量确认包:%8d,发送单个数据包:%8d,重复接收包:%8d,最新PING:", self.sendData.lastok, self.sendData.maxok, self.num_recv_data, self.num_recv_ack, self.num_send, self.num_resend, self.num_acklist, self.num_ack, self.num_waste, self.ping))
 		case <-timerack.C:
 			if len(self.waitHeader) == 0 {
 				if self.recvData.curack < self.recvData.lastok {
@@ -339,6 +337,7 @@ func (self *UdpTask) Loop() {
 			}
 		case <-timersend.C:
 			if self.sendData.maxok-self.sendData.lastok >= 100 {
+				fmt.Println("CheckSendLostMsg")
 				self.CheckSendLostMsg()
 			}
 			/*
