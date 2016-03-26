@@ -183,7 +183,7 @@ func (self *UdpTask) sendAck(head *UdpHeader) (int, error) {
 	return n, err
 }
 func (self *UdpTask) CheckReSendAck() {
-	if last_ack != nil {
+	if self.last_ack != nil {
 		n, _, _ := self.conn.WriteMsgUDP(self.last_ack.Serialize(), nil, self.addr)
 		if n != 0 {
 			self.num_acklist++
