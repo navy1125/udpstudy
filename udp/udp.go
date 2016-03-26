@@ -25,10 +25,11 @@ type UdpHeader struct {
 }
 
 func (self *UdpHeader) Serialize() []byte {
-	if self.datasize == 0 {
-		self.datasize = byte(len(self.data))
+	datasize := byte(len(self.data))
+	if datasize != 0 {
+		self.datasize = datasize
 	}
-	buf := bytes.NewBuffer(make([]byte, 0, 6+int(self.datasize)))
+	buf := bytes.NewBuffer(make([]byte, 0, self.GetHeadSize()+int(datasize)))
 	buf.WriteByte(self.datasize)
 	buf.WriteByte(self.bitmask)
 	binary.Write(buf, binary.LittleEndian, self.seq)
@@ -40,18 +41,33 @@ func (self *UdpHeader) Serialize() []byte {
 func (self *UdpHeader) Unserialize(b []byte, all int) int {
 	self.datasize = b[0]
 	self.bitmask = b[1]
-	if all < int(self.datasize)+6 {
-		fmt.Println("Unserialize: ", all, int(self.datasize))
+	datasize := 0
+	if self.bitmask&1 == 1 {
+		datasize = self.GetHeadSize()
+	} else {
+		datasize = int(self.datasize) + self.GetHeadSize()
+	}
+	if all < datasize {
+		fmt.Println("Unserialize: ", all, datasize)
 		return 0
 	}
 	seq := b[2:4]
-	ack := b[4:6]
+	ack := b[4:self.GetHeadSize()]
 	self.seq = uint16((int(seq[1]) << 8) + int(seq[0]))
 	self.ack = uint16((int(ack[1]) << 8) + int(ack[0]))
-	if self.datasize > 0 {
-		self.data = b[6 : 6+int(self.datasize)]
+	if datasize > 0 {
+		self.data = b[self.GetHeadSize() : self.GetHeadSize()+datasize]
 	}
-	return 6 + int(self.datasize)
+	return self.GetAllSize()
+}
+func (self *UdpHeader) GetAllSize() int {
+	return self.GetDataSize() + self.GetHeadSize()
+}
+func (self *UdpHeader) GetDataSize() int {
+	return len(self.data)
+}
+func (self *UdpHeader) GetHeadSize() int {
+	return 6
 }
 
 type UdpData struct {
@@ -155,12 +171,6 @@ func (self *UdpTask) sendMsg(head *UdpHeader) (int, error) {
 		return 0, nil
 	}
 	n, _, err := self.conn.WriteMsgUDP(head.Serialize(), nil, self.addr)
-	if n != int(head.datasize)+6 {
-		fmt.Println("发送缓冲区有bug,无解", n, head.datasize+6, err)
-		if err == nil {
-			panic("ddddd")
-		}
-	}
 	if n == 0 {
 		if err == nil {
 			panic("ddddd")
@@ -174,12 +184,6 @@ func (self *UdpTask) sendMsg(head *UdpHeader) (int, error) {
 }
 func (self *UdpTask) sendAck(head *UdpHeader) (int, error) {
 	n, _, err := self.conn.WriteMsgUDP(head.Serialize(), nil, self.addr)
-	if n != int(head.datasize)+6 {
-		fmt.Println("发送缓冲区有bug,无解", n, head.datasize+6, err)
-		if err == nil {
-			panic("ddddd")
-		}
-	}
 	return n, err
 }
 func (self *UdpTask) CheckReSendAck() {
@@ -255,17 +259,6 @@ func set_state(state byte, teststate uint16) byte {
 }
 func (self *UdpTask) FillOkAckHead(head *UdpHeader) {
 	self.FillMaxokAckHead(head)
-	head.datasize = 0
-	for i := uint16(1); i <= 8; i++ {
-		next := head.seq + i
-		if next < self.recvData.maxok {
-			if self.recvData.header[next] != nil {
-				head.datasize = set_state(head.datasize, i)
-			}
-		} else {
-			break
-		}
-	}
 }
 func (self *UdpTask) FillMaxokAckHead(head *UdpHeader) {
 	head.bitmask = 0
@@ -335,17 +328,6 @@ func (self *UdpTask) Loop() {
 				if self.sendData.header[head.seq] != nil {
 					self.sendData.header[head.seq].time_ack = now
 					//self.sendData.header[head.seq] = nil
-				}
-				if head.datasize != 0 {
-					for i := uint16(1); i <= 8; i++ {
-						if isset_state(head.datasize, i) {
-							next := head.seq + i
-							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
-								fmt.Println("datasize补漏成功:", head.seq, head.bitmask)
-								self.sendData.header[head.seq].time_ack = now
-							}
-						}
-					}
 				}
 				if head.bitmask != 0 {
 					for i := uint16(8); i >= 2; i-- {
