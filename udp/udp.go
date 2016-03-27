@@ -347,7 +347,7 @@ func (self *UdpTask) Loop() {
 				}
 			} else {
 				self.num_recv_ack++
-				fmt.Println("收到单个确认包", now, head.seq, self.sendData.maxok, self.sendData.lastok, head.bitmask)
+				fmt.Println("收到单个确认包", now, head.seq, self.sendData.maxok, self.sendData.lastok, head.seq-(head.seq%2)*7-1, head.bitmask)
 				if self.sendData.header[head.seq] != nil {
 					self.sendData.header[head.seq].time_ack = now
 					//self.sendData.header[head.seq] = nil
@@ -384,6 +384,18 @@ func (self *UdpTask) Loop() {
 					if n != 0 {
 						head.seq = 0
 					}
+					if head1.bitmask == 0 {
+						next := head1.seq - (head1.seq%2)*7 - 1
+						for i := uint16(1); i <= 7; i++ {
+							if self.recvData.header[next] != nil {
+								head1.bitmask = set_state(head1.bitmask, i)
+								fmt.Println("head1.bitmask", next, i, head1.bitmask)
+							} else {
+								fmt.Println("head1.bitmask", next, i, nil)
+							}
+							next--
+						}
+					}
 				}
 				for i := self.recvData.lastok; i <= self.recvData.maxok; i++ {
 					if self.recvData.header[i] == nil {
@@ -397,7 +409,7 @@ func (self *UdpTask) Loop() {
 				if head1.seq <= self.recvData.lastok {
 					head1.bitmask |= 1
 					head1.seq = self.recvData.lastok
-					self.FillLastokAckHead(head)
+					self.FillLastokAckHead(head1)
 				} else if head1.seq == self.recvData.lastok+1 {
 					head1.bitmask |= 1
 					head1.seq = self.recvData.lastok + 1
