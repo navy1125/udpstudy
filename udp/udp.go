@@ -178,6 +178,7 @@ func (self *UdpTask) sendMsg(head *UdpHeader) (int, error) {
 }
 func (self *UdpTask) sendAck(head *UdpHeader) (int, error) {
 	n, _, err := self.conn.WriteMsgUDP(head.Serialize(), nil, self.addr)
+	fmt.Println("sendAck", head)
 	return n, err
 }
 func (self *UdpTask) CheckReSendAck() {
@@ -259,7 +260,6 @@ func (self *UdpTask) FillMaxokAckHead(head *UdpHeader) {
 	next := head.seq - 1
 	for i := uint16(1); i <= 7; i++ {
 		if self.recvData.header[next] != nil {
-			fmt.Println("FillMaxokAckHead", i, next, head.seq)
 			head.bitmask = set_state(head.bitmask, i)
 		}
 		next--
