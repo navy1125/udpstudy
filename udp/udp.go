@@ -16,7 +16,6 @@ type UdpHeader struct {
 	datasize      byte
 	bitmask       byte
 	seq           uint16
-	ack           uint16
 	time_send     int64
 	time_ack      int64
 	lost_times    int64
@@ -33,7 +32,6 @@ func (self *UdpHeader) Serialize() []byte {
 	buf.WriteByte(self.datasize)
 	buf.WriteByte(self.bitmask)
 	binary.Write(buf, binary.LittleEndian, self.seq)
-	binary.Write(buf, binary.LittleEndian, self.ack)
 	buf.Write(self.data)
 	return buf.Bytes()
 }
@@ -42,19 +40,15 @@ func (self *UdpHeader) Unserialize(b []byte, all int) int {
 	self.datasize = b[0]
 	self.bitmask = b[1]
 	datasize := 0
-	if self.bitmask&1 == 1 {
-		datasize = self.GetHeadSize()
-	} else {
+	if self.bitmask&1 == 0 {
 		datasize = int(self.datasize)
 	}
 	if all < datasize+self.GetHeadSize() {
 		fmt.Println("Unserialize: ", all, datasize)
 		return 0
 	}
-	seq := b[2:4]
-	ack := b[4:self.GetHeadSize()]
+	seq := b[2:self.GetHeadSize()]
 	self.seq = uint16((int(seq[1]) << 8) + int(seq[0]))
-	self.ack = uint16((int(ack[1]) << 8) + int(ack[0]))
 	if datasize > 0 {
 		self.data = b[self.GetHeadSize() : self.GetHeadSize()+datasize]
 	}
@@ -67,7 +61,7 @@ func (self *UdpHeader) GetDataSize() int {
 	return len(self.data)
 }
 func (self *UdpHeader) GetHeadSize() int {
-	return 6
+	return HEADLEN
 }
 
 type UdpData struct {
@@ -262,17 +256,18 @@ func (self *UdpTask) FillOkAckHead(head *UdpHeader) {
 }
 func (self *UdpTask) FillMaxokAckHead(head *UdpHeader) {
 	head.bitmask = 0
-	for i := uint16(8); i > 2; i-- {
-		next := head.seq - i
+	next := head.seq - 1
+	for i := uint16(1); i <= 7; i++ {
 		if self.recvData.header[next] != nil {
 			head.bitmask = set_state(head.bitmask, i)
 		}
+		next--
 	}
 }
 func (self *UdpTask) FillLastokAckHead(head *UdpHeader) {
 	head.datasize = 0
-	for i := uint16(1); i <= 8; i++ {
-		next := head.seq + i + 1
+	next := head.seq + 1 + 1 //不算当前,不算下一个,因为下一个必定是nil
+	for i := uint16(0); i <= 7; i++ {
 		if next < self.recvData.maxok {
 			if self.recvData.header[next] != nil {
 				head.datasize = set_state(head.datasize, i)
@@ -280,6 +275,17 @@ func (self *UdpTask) FillLastokAckHead(head *UdpHeader) {
 		} else {
 			break
 		}
+		next++
+	}
+	for i := uint16(1); i <= 7; i++ {
+		if next < self.recvData.maxok {
+			if self.recvData.header[next] != nil {
+				head.bitmask = set_state(head.bitmask, i)
+			}
+		} else {
+			break
+		}
+		next++
 	}
 }
 func (self *UdpTask) Loop() {
@@ -293,7 +299,7 @@ func (self *UdpTask) Loop() {
 		case head := <-self.recvAckCh:
 			//self.Test = true
 			now = int64(time.Now().UnixNano() / int64(time.Millisecond))
-			//fmt.Println("收包", head.seq)
+			//fmt.Println("收确认包", head.seq)
 			ismax := false
 			if head.seq >= self.sendData.maxok {
 				ismax = true
@@ -307,19 +313,31 @@ func (self *UdpTask) Loop() {
 			}
 			if head.bitmask&1 == 1 {
 				self.num_recv_acklist++
-				//fmt.Println("批量确认包完成", self.sendData.lastok, head.seq)
+				fmt.Println("批量确认包完成", self.sendData.lastok, head.seq)
 				for i := self.sendData.lastok; i <= head.seq; i++ {
 					self.sendData.header[i] = nil
 				}
+				next := head.seq + 1 + 1
 				if head.datasize != 0 {
-					for i := uint16(1); i <= 8; i++ {
+					for i := uint16(0); i <= 7; i++ {
 						if isset_state(head.datasize, i) {
-							next := head.seq + i + 1
 							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
-								fmt.Println("last datasize补漏成功:", head.seq, head.bitmask)
+								fmt.Println("last datasize补漏成功:", head.seq, head.datasize)
 								self.sendData.header[head.seq].time_ack = now
 							}
 						}
+						next++
+					}
+				}
+				if (head.bitmask >> 1) != 0 {
+					for i := uint16(1); i <= 7; i++ {
+						if isset_state(head.bitmask, i) {
+							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
+								fmt.Println("last bitmask补漏成功:", head.seq, head.bitmask)
+								self.sendData.header[head.seq].time_ack = now
+							}
+						}
+						next++
 					}
 				}
 			} else {
@@ -330,14 +348,15 @@ func (self *UdpTask) Loop() {
 					//self.sendData.header[head.seq] = nil
 				}
 				if head.bitmask != 0 {
-					for i := uint16(8); i >= 2; i-- {
+					next := head.seq - 1
+					for i := uint16(1); i <= 7; i++ {
 						if isset_state(head.bitmask, i) {
-							next := head.seq + i
 							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
-								//fmt.Println("bitmask补漏成功:", head.seq, head.bitmask)
+								fmt.Println("max bitmask补漏成功:", head.seq, head.bitmask)
 								self.sendData.header[head.seq].time_ack = now
 							}
 						}
+						next--
 					}
 				}
 			}
@@ -464,7 +483,7 @@ func (self *UdpTask) LoopRecv() {
 			self.addr = addr
 		}
 		all := n + left
-		for all >= 6 {
+		for all >= HEADLEN {
 			head := &UdpHeader{}
 			offset := head.Unserialize(b, all)
 			if offset > 0 {
