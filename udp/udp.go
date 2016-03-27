@@ -212,10 +212,14 @@ func (self *UdpTask) CheckSendLostMsg() {
 			}
 		}
 	}
+	delay := 140
+	if self.sendData.maxok-self.sendData.lastok >= 100 {
+		delay = 10
+	}
 	for i := self.sendData.lastok; i < uint16(resendmax); i++ {
 		//fmt.Println("尝试丢包重发", i, self.sendData.lastok, self.sendData.maxok)
 		if self.sendData.header[i] != nil {
-			if self.sendData.maxok-self.sendData.lastok >= 100 && now-self.sendData.header[i].time_send >= self.ping*(self.sendData.header[i].lost_times+1)+140 {
+			if now-self.sendData.header[i].time_send >= self.ping*(self.sendData.header[i].lost_times+1)+delay {
 				//发现有更新的包已经确认,所有老包直接重发
 				oldtime := self.sendData.header[i].time_send
 				n, _ := self.sendMsg(self.sendData.header[i])
@@ -418,7 +422,7 @@ func (self *UdpTask) Loop() {
 					self.recvData.header[self.recvData.curack].seq = 0
 					if self.recvData.lastok-self.recvData.curack >= 3 {
 						self.last_ack = head
-						self.last_ack_times = int((self.recvData.lastok - self.recvData.curack) / 32)
+						self.last_ack_times = int((self.recvData.lastok-self.recvData.curack)/64) + 1
 						timercheckack.Reset(time.Millisecond * 10)
 					}
 				}
@@ -440,27 +444,29 @@ func (self *UdpTask) Loop() {
 				}
 			}
 		case <-timersend.C:
-			now = int64(time.Now().UnixNano() / int64(time.Millisecond))
 			self.CheckSendLostMsg()
-			cansend := true
-			for i := self.sendData.lastok; i <= self.sendData.curseq; i++ {
-				if self.sendData.header[i] != nil && self.sendData.header[i].time_ack == 0 && self.sendData.header[i].lost_times == 0 {
-					//fmt.Println("检测超时", now-self.sendData.header[i].time_send)
-					timeout := self.sendData.header[i].time_send + (self.sendData.header[i].timeout_times+1)*self.ping + 100
-					if now > timeout {
-						//发现有更新的包已经确认,所有老包直接重发
-						n, _ := self.sendMsg(self.sendData.header[i])
-						if n == 0 {
-							cansend = true
-							break
+			/*
+				now = int64(time.Now().UnixNano() / int64(time.Millisecond))
+				cansend := true
+				for i := self.sendData.lastok; i <= self.sendData.curseq; i++ {
+					if self.sendData.header[i] != nil && self.sendData.header[i].time_ack == 0 && self.sendData.header[i].lost_times == 0 {
+						//fmt.Println("检测超时", now-self.sendData.header[i].time_send)
+						timeout := self.sendData.header[i].time_send + (self.sendData.header[i].timeout_times+1)*self.ping + 100
+						if now > timeout {
+							//发现有更新的包已经确认,所有老包直接重发
+							n, _ := self.sendMsg(self.sendData.header[i])
+							if n == 0 {
+								cansend = true
+								break
+							}
+							self.num_timeout++
+							fmt.Println("超时重发", i, self.sendData.lastok, self.sendData.maxok, self.sendData.curseq, self.num_timeout, now-timeout+self.ping+100, self.ping)
+							self.sendData.header[i].timeout_times++
+							self.sendData.header[i].time_send = now
 						}
-						self.num_timeout++
-						fmt.Println("超时重发", i, self.sendData.lastok, self.sendData.maxok, self.sendData.curseq, self.num_timeout, now-timeout+self.ping+100, self.ping)
-						self.sendData.header[i].timeout_times++
-						self.sendData.header[i].time_send = now
 					}
 				}
-			}
+				// */
 			if self.Test && cansend {
 				if self.sendData.maxok < 65534 {
 					self.SendData([]byte("wanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghaijunwanghai"))
