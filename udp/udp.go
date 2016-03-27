@@ -219,24 +219,29 @@ func (self *UdpTask) CheckSendLostMsg() {
 			}
 		}
 	}
-	for i := self.sendData.lastok; i < uint16(resendmax); i++ {
-		//fmt.Println("尝试丢包重发", i, self.sendData.lastok, self.sendData.maxok)
-		if self.sendData.header[i] != nil {
-			diff := now - self.sendData.header[i].time_send
-			if diff >= self.ping*(self.sendData.header[i].lost_times+1)+int64(i-self.sendData.lastok)*20 {
-				//发现有更新的包已经确认,所有老包直接重发
-				oldtime := self.sendData.header[i].time_send
-				n, _ := self.sendMsg(self.sendData.header[i])
-				fmt.Println("丢包重发", now, i, n, self.sendData.lastok, self.sendData.maxok, now, oldtime, now-oldtime)
-				if n == 0 {
-					break
+	if self.sendData.lastok == uint16(resendmax) {
+		self.ping_max = 0
+		self.ping_max_seq = 0
+	} else {
+		for i := self.sendData.lastok; i < uint16(resendmax); i++ {
+			//fmt.Println("尝试丢包重发", i, self.sendData.lastok, self.sendData.maxok)
+			if self.sendData.header[i] != nil {
+				diff := now - self.sendData.header[i].time_send
+				if diff >= self.ping*(self.sendData.header[i].lost_times+1)+int64(i-self.sendData.lastok)*50 {
+					//发现有更新的包已经确认,所有老包直接重发
+					oldtime := self.sendData.header[i].time_send
+					n, _ := self.sendMsg(self.sendData.header[i])
+					fmt.Println("丢包重发", now, i, n, self.sendData.lastok, self.sendData.maxok, now, oldtime, diff)
+					if n == 0 {
+						break
+					}
+					self.sendData.header[i].time_send = now
+					self.sendData.header[i].lost_times++
+					self.num_resend++
+				} else if self.sendData.header[i].lost_times == 0 && diff > self.ping_max {
+					self.ping_max = diff
+					self.ping_max_seq = i
 				}
-				self.sendData.header[i].time_send = now
-				self.sendData.header[i].lost_times++
-				self.num_resend++
-			} else if self.sendData.header[i].lost_times == 0 && diff > self.ping_max {
-				self.ping_max = diff
-				self.ping_max_seq = i
 			}
 		}
 	}
@@ -298,7 +303,7 @@ func (self *UdpTask) FillLastokAckHead(head *UdpHeader) {
 }
 func (self *UdpTask) Loop() {
 	timersend := time.NewTicker(time.Millisecond * 10)
-	timerack := time.NewTicker(time.Millisecond * 50)
+	timerack := time.NewTicker(time.Millisecond * 20)
 	timersec := time.NewTicker(time.Second)
 	timercheckack := time.NewTimer(time.Millisecond * 10)
 	now := int64(time.Now().UnixNano() / int64(time.Millisecond))
@@ -330,7 +335,7 @@ func (self *UdpTask) Loop() {
 					for i := uint16(0); i <= 7; i++ {
 						if isset_state(head.datasize, i) {
 							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
-								fmt.Println("last datasize补漏成功:", now, head.seq, next, head.datasize)
+								//jfmt.Println("last datasize补漏成功:", now, head.seq, next, head.datasize)
 								self.sendData.header[next].time_ack = now
 							}
 						}
@@ -341,7 +346,7 @@ func (self *UdpTask) Loop() {
 					for i := uint16(1); i <= 7; i++ {
 						if isset_state(head.bitmask, i) {
 							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
-								fmt.Println("last bitmask补漏成功:", now, head.seq, next, head.bitmask)
+								//fmt.Println("last bitmask补漏成功:", now, head.seq, next, head.bitmask)
 								self.sendData.header[next].time_ack = now
 							}
 						}
@@ -360,7 +365,7 @@ func (self *UdpTask) Loop() {
 					for i := uint16(1); i <= 7; i++ {
 						if isset_state(head.bitmask, i) {
 							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
-								fmt.Println("max bitmask补漏成功:", now, head.seq, next, head.bitmask)
+								//fmt.Println("max bitmask补漏成功:", now, head.seq, next, head.bitmask)
 								self.sendData.header[next].time_ack = now
 							}
 						}
@@ -427,8 +432,6 @@ func (self *UdpTask) Loop() {
 			}
 		case <-timersec.C:
 			fmt.Println(fmt.Sprintf("完成SEQ:%5d,最大SEQ:%5d,接收包:%5d,发送包:%5d,重发包:%5d,超时包:%5d,接受ACKLIST:%5d,接受ACK:%5d,发送ACKLIST:%5d,发送ACK:%5d,重复接收包:%5d,PING:%4d,PING_MAX:%4d:%d", self.sendData.lastok, self.sendData.maxok, self.num_recv_data, self.num_send, self.num_resend, self.num_timeout, self.num_recv_acklist, self.num_recv_ack, self.num_acklist, self.num_ack, self.num_waste, self.ping, self.ping_max, self.ping_max_seq))
-			self.ping_max = 0
-			self.ping_max_seq = 0
 		case <-timercheckack.C:
 			self.CheckReSendAck()
 			if self.last_ack_times != 0 {
