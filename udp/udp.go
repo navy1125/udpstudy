@@ -212,7 +212,7 @@ func (self *UdpTask) CheckSendLostMsg() {
 			}
 		}
 	}
-	delay := 140
+	delay := int64(140)
 	if self.sendData.maxok-self.sendData.lastok >= 100 {
 		delay = 10
 	}
@@ -445,9 +445,9 @@ func (self *UdpTask) Loop() {
 			}
 		case <-timersend.C:
 			self.CheckSendLostMsg()
+			cansend := true
 			/*
 				now = int64(time.Now().UnixNano() / int64(time.Millisecond))
-				cansend := true
 				for i := self.sendData.lastok; i <= self.sendData.curseq; i++ {
 					if self.sendData.header[i] != nil && self.sendData.header[i].time_ack == 0 && self.sendData.header[i].lost_times == 0 {
 						//fmt.Println("检测超时", now-self.sendData.header[i].time_send)
