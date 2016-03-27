@@ -140,7 +140,7 @@ func (self *UdpTask) SendData(b []byte) bool {
 			offset = bsize - cur
 		}
 		self.conn.SetWriteDeadline(time.Now().Add(time.Duration(1 * 2 * int64(time.Second))))
-		n, err := self.sendMsg(head)
+		n, err := self.sendMsg(head, false)
 		if err != nil {
 			fmt.Println("消息发送失败", self.sendData.curseq, n, err)
 		}
@@ -161,9 +161,9 @@ func (self *UdpTask) SendData(b []byte) bool {
 	}
 	return true
 }
-func (self *UdpTask) sendMsg(head *UdpHeader) (int, error) {
+func (self *UdpTask) sendMsg(head *UdpHeader, force bool) (int, error) {
 	//if head.seq-self.sendData.lastok >= 100 && head.seq != self.sendData.lastok+1 {
-	if head.seq-self.sendData.lastok >= 1024 && head.seq != self.sendData.lastok+1 {
+	if head.seq-self.sendData.lastok >= 1024 && force == false {
 		//fmt.Println("缓冲区满,等待下次发送", head.seq, self.sendData.curseq, self.sendData.lastok, self.sendData.maxok)
 		return 0, nil
 	}
@@ -207,6 +207,10 @@ func (self *UdpTask) CheckSendLostMsg() {
 	for resendmax = self.sendData.lastok; resendmax <= self.sendData.maxok; resendmax++ {
 		if self.sendData.header[resendmax] != nil {
 			if self.sendData.header[resendmax].time_ack != 0 {
+				myping := self.sendData.header[resendmax].time_ack - self.sendData.header[resendmax].time_send
+				if myping < self.ping && (self.ping > 500 || self.sendData.header[resendmax].lost_times == 0) {
+					self.ping = myping
+				}
 				if now-self.sendData.header[resendmax].time_ack < self.ping {
 					//fmt.Println("等待单个确认包完成", resendmax, self.sendData.lastok, now, self.sendData.header[resendmax].time_ack, now-self.sendData.header[resendmax].time_ack)
 					break
@@ -214,40 +218,41 @@ func (self *UdpTask) CheckSendLostMsg() {
 					//fmt.Println("单个确认包完成", resendmax, self.sendData.lastok, now, self.sendData.header[resendmax].time_ack, now-self.sendData.header[resendmax].time_ack)
 					self.sendData.header[resendmax] = nil
 					self.CheckLastok()
+					if self.ping_max_seq == resendmax {
+						self.ping_max = self.ping
+						self.ping_max_seq = self.sendData.maxok
+					}
 					continue
 				}
 			}
 		}
 	}
-	if self.sendData.lastok == uint16(resendmax) {
-		self.ping_max = 0
-		self.ping_max_seq = 0
-	} else {
-		for i := self.sendData.lastok; i < uint16(resendmax); i++ {
-			//fmt.Println("尝试丢包重发", i, self.sendData.lastok, self.sendData.maxok)
-			if self.sendData.header[i] != nil {
-				diff := now - self.sendData.header[i].time_send
-				if diff >= self.ping*(int64(i-self.sendData.lastok)+self.sendData.header[i].lost_times+1)+int64(i-self.sendData.lastok)*30 {
-					//发现有更新的包已经确认,所有老包直接重发
-					self.sendData.header[i].bitmask |= 2
-					oldtime := self.sendData.header[i].time_send
-					n, _ := self.sendMsg(self.sendData.header[i])
-					fmt.Println("丢包重发", now, i, n, self.sendData.lastok, self.sendData.maxok, now, oldtime, diff)
-					if n == 0 {
-						break
-					}
-					self.sendData.header[i].time_send = now
-					self.sendData.header[i].lost_times++
-					self.num_resend++
-				} else if self.sendData.header[i].lost_times == 0 && diff > self.ping_max {
-					self.ping_max = diff
-					self.ping_max_seq = i
+	for i := self.sendData.lastok; i < uint16(resendmax); i++ {
+		//fmt.Println("尝试丢包重发", i, self.sendData.lastok, self.sendData.maxok)
+		if self.sendData.header[i] != nil {
+			diff := now - self.sendData.header[i].time_send
+			if diff >= self.ping*(int64(i-self.sendData.lastok)+self.sendData.header[i].lost_times+1)+int64(i-self.sendData.lastok)*30 {
+				//发现有更新的包已经确认,所有老包直接重发
+				self.sendData.header[i].bitmask |= 2
+				oldtime := self.sendData.header[i].time_send
+				n, _ := self.sendMsg(self.sendData.header[i], true)
+				fmt.Println("丢包重发", now, i, n, self.sendData.lastok, self.sendData.maxok, now, oldtime, diff)
+				if n == 0 {
+					break
 				}
+				self.sendData.header[i].time_send = now
+				self.sendData.header[i].lost_times++
+				self.num_resend++
+			}
+			if diff > self.ping_max {
+				self.ping_max = diff
+				self.ping_max_seq = i
 			}
 		}
 	}
 }
 func (self *UdpTask) CheckLastok() {
+	//tmp := self.sendData.lastok
 	for i := self.sendData.lastok; i <= self.sendData.maxok; i++ {
 		//if self.sendData.header[i] != nil && self.sendData.header[i].time_ack != 0 {
 		if self.sendData.header[i] != nil {
@@ -258,6 +263,11 @@ func (self *UdpTask) CheckLastok() {
 		}
 		self.sendData.lastok = i
 	}
+	/*
+		if self.sendData.lastok != tmp {
+			fmt.Println(fmt.Sprintf("完成SEQ增加:%5d,当前完成SEQ:%5d,最大SEQ:%5d", tmp, self.sendData.lastok, self.sendData.maxok))
+		}
+		// */
 }
 func isset_state(state byte, teststate uint16) bool {
 	//return 0 != (state[teststate/8] & (0xff & (1 << (teststate % 8))))
@@ -311,7 +321,7 @@ func (self *UdpTask) Loop() {
 	for {
 		select {
 		case head := <-self.recvAckCh:
-			//self.Test = true
+			self.Test = true
 			now = int64(time.Now().UnixNano() / int64(time.Millisecond))
 			//fmt.Println("收确认包", now,head.seq)
 			ismax := false
@@ -327,21 +337,27 @@ func (self *UdpTask) Loop() {
 			}
 			if head.bitmask&1 == 1 {
 				self.num_recv_acklist++
-				fmt.Println("批量确认包完成", now, self.sendData.lastok, head.seq, self.sendData.maxok, head.datasize, head.bitmask)
+				//fmt.Println("批量确认包完成", now, self.sendData.lastok, head.seq, self.sendData.maxok, head.datasize, head.bitmask)
 				for i := self.sendData.lastok; i <= head.seq; i++ {
 					self.sendData.header[i] = nil
+					if self.ping_max_seq == i {
+						self.ping_max = self.ping
+						self.ping_max_seq = self.sendData.maxok
+					}
 				}
 				next := head.seq + 1 + 1
 				if head.datasize != 0 {
 					for i := uint16(0); i <= 7; i++ {
 						if isset_state(head.datasize, i) {
 							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
-								//jfmt.Println("last datasize补漏成功:", now, head.seq, next, head.datasize)
+								//fmt.Println("last datasize补漏成功:", now, head.seq, next, head.datasize)
 								self.sendData.header[next].time_ack = now
 							}
 						}
 						next++
 					}
+				} else {
+					next += 8
 				}
 				if (head.bitmask >> 1) != 0 {
 					for i := uint16(1); i <= 7; i++ {
@@ -356,7 +372,7 @@ func (self *UdpTask) Loop() {
 				}
 			} else {
 				self.num_recv_ack++
-				fmt.Println(fmt.Sprintf("收到单个SEQ:%5d,完成SEQ:%5d,最大SEQ:%5d,%5d,%5d", head.seq, self.sendData.lastok, self.sendData.maxok, head.seq-(head.seq%2)*7-1, head.bitmask))
+				//fmt.Println(fmt.Sprintf("收到单个SEQ:%5d,完成SEQ:%5d,最大SEQ:%5d,%5d,%5d", head.seq, self.sendData.lastok, self.sendData.maxok, head.seq-(head.seq%2)*7-1, head.bitmask))
 				if self.sendData.header[head.seq] != nil {
 					self.sendData.header[head.seq].time_ack = now
 					//self.sendData.header[head.seq] = nil
@@ -471,7 +487,7 @@ func (self *UdpTask) Loop() {
 						timeout := self.sendData.header[i].time_send + (self.sendData.header[i].timeout_times+1)*self.ping + 100
 						if now > timeout {
 							//发现有更新的包已经确认,所有老包直接重发
-							n, _ := self.sendMsg(self.sendData.header[i])
+							n, _ := self.sendMsg(self.sendData.header[i],true)
 							if n == 0 {
 								cansend = true
 								break
