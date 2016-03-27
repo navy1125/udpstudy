@@ -177,8 +177,9 @@ func (self *UdpTask) sendMsg(head *UdpHeader) (int, error) {
 	return n, err
 }
 func (self *UdpTask) sendAck(head *UdpHeader) (int, error) {
+	fmt.Println("sendAck,head.bitmask", head.bitmask)
 	n, _, err := self.conn.WriteMsgUDP(head.Serialize(), nil, self.addr)
-	fmt.Println("sendAck", head)
+	fmt.Println("sendAck,head.bitmask1", head.bitmask)
 	return n, err
 }
 func (self *UdpTask) CheckReSendAck() {
