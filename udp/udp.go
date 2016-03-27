@@ -187,6 +187,7 @@ func (self *UdpTask) sendAck(head *UdpHeader) (int, error) {
 }
 func (self *UdpTask) CheckReSendAck() {
 	if self.last_ack != nil {
+		self.FillLastokAckHead(self.last_ack)
 		n, _, _ := self.conn.WriteMsgUDP(self.last_ack.Serialize(), nil, self.addr)
 		if n != 0 {
 			if self.last_ack_times == 0 {
@@ -423,8 +424,13 @@ func (self *UdpTask) Loop() {
 			}
 		case <-timersec.C:
 			fmt.Println(fmt.Sprintf("完成SEQ:%5d,最大SEQ:%5d,接收包:%5d,发送包:%5d,重发包:%5d,超时包:%5d,接受ACKLIST:%5d,接受ACK:%5d,发送ACKLIST:%5d,发送ACK:%5d,重复接收包:%5d,PING:%4d,PING_MAX:%4d", self.sendData.lastok, self.sendData.maxok, self.num_recv_data, self.num_send, self.num_resend, self.num_timeout, self.num_recv_acklist, self.num_recv_ack, self.num_acklist, self.num_ack, self.num_waste, self.ping, self.ping_max))
+			self.ping_max = 0
 		case <-timercheckack.C:
 			self.CheckReSendAck()
+			if self.last_ack_times != 0 {
+				timercheckack.Reset(time.Millisecond * 10)
+			}
+			fmt.Println("timercheckack")
 		case <-timerack.C:
 			if self.recvData.curack < self.recvData.lastok {
 				head := &UdpHeader{}
