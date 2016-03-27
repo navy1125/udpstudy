@@ -321,7 +321,6 @@ func (self *UdpTask) Loop() {
 	for {
 		select {
 		case head := <-self.recvAckCh:
-			self.Test = true
 			now = int64(time.Now().UnixNano() / int64(time.Millisecond))
 			//fmt.Println("收确认包", now,head.seq)
 			ismax := false
@@ -396,6 +395,7 @@ func (self *UdpTask) Loop() {
 			}
 			self.CheckLastok()
 		case head := <-self.recvDataCh:
+			self.Test = true
 			if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
 				if (head.bitmask & 2) == 2 {
 					fmt.Println(fmt.Sprintf("重发有效SEQ:%5d,数据大小:%3d,完成SEQ:%5d,浪费数量:%5d", head.seq, head.datasize, self.recvData.lastok, self.num_waste))
@@ -439,7 +439,7 @@ func (self *UdpTask) Loop() {
 				fmt.Println(fmt.Sprintf("收到过期SEQ:%5d,数据大小:%3d,完成SEQ:%5d,浪费数量:%5d", head.seq, head.datasize, self.recvData.lastok, self.num_waste))
 			}
 		case <-timersec.C:
-			fmt.Println(fmt.Sprintf("完成SEQ:%5d,最大SEQ:%5d,接收包:%5d,发送包:%5d,重发包:%5d,超时包:%5d,接受ACKLIST:%5d,接受ACK:%5d,发送ACKLIST:%5d,发送ACK:%5d,重复接收包:%5d,PING:%4d,PING_MAX:%4d:%d", self.sendData.lastok, self.sendData.maxok, self.num_recv_data, self.num_send, self.num_resend, self.num_timeout, self.num_recv_acklist, self.num_recv_ack, self.num_acklist, self.num_ack, self.num_waste, self.ping, self.ping_max, self.ping_max_seq))
+			fmt.Println(fmt.Sprintf("完成SEQ:%5d,最大SEQ:%5d,接包:%5d,发包:%5d,重发包:%5d,超时包:%5d,接受ACKLIST:%5d,接受ACK:%5d,发送ACKLIST:%5d,发送ACK:%5d,重收包:%5d,PING:%4d,PING_MAX:%4d:%d", self.sendData.lastok, self.sendData.maxok, self.num_recv_data, self.num_send, self.num_resend, self.num_timeout, self.num_recv_acklist, self.num_recv_ack, self.num_acklist, self.num_ack, self.num_waste, self.ping, self.ping_max, self.ping_max_seq))
 		case <-timercheckack.C:
 			self.CheckReSendAck()
 			if self.last_ack_times != 0 {
