@@ -261,7 +261,7 @@ func set_state(state byte, teststate uint16) byte {
 }
 func (self *UdpTask) FillMaxokAckHead(head *UdpHeader) {
 	head.bitmask = 0
-	next := head.seq - 1
+	next := head.seq - (head.seq%2)*7 - 1
 	for i := uint16(1); i <= 7; i++ {
 		if self.recvData.header[next] != nil {
 			head.bitmask = set_state(head.bitmask, i)
@@ -353,7 +353,7 @@ func (self *UdpTask) Loop() {
 					//self.sendData.header[head.seq] = nil
 				}
 				if head.bitmask != 0 {
-					next := head.seq - 1
+					next := head.seq - (head.seq%2)*7 - 1
 					for i := uint16(1); i <= 7; i++ {
 						if isset_state(head.bitmask, i) {
 							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
@@ -379,6 +379,7 @@ func (self *UdpTask) Loop() {
 				} else {
 					head1 := &UdpHeader{}
 					head1.seq = head.seq
+					self.FillMaxokAckHead(head1)
 					n, _ := self.sendAck(head1)
 					if n != 0 {
 						head.seq = 0
