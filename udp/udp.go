@@ -259,6 +259,7 @@ func (self *UdpTask) FillMaxokAckHead(head *UdpHeader) {
 	next := head.seq - 1
 	for i := uint16(1); i <= 7; i++ {
 		if self.recvData.header[next] != nil {
+			fmt.Println("FillMaxokAckHead", i, next, head.seq)
 			head.bitmask = set_state(head.bitmask, i)
 		}
 		next--
@@ -313,7 +314,7 @@ func (self *UdpTask) Loop() {
 			}
 			if head.bitmask&1 == 1 {
 				self.num_recv_acklist++
-				fmt.Println("批量确认包完成", self.sendData.lastok, head.seq)
+				fmt.Println("批量确认包完成", self.sendData.lastok, head.seq, self.sendData.maxok, head.datasize, head.bitmask)
 				for i := self.sendData.lastok; i <= head.seq; i++ {
 					self.sendData.header[i] = nil
 				}
@@ -342,7 +343,7 @@ func (self *UdpTask) Loop() {
 				}
 			} else {
 				self.num_recv_ack++
-				//fmt.Println("收到单个确认包", head.seq)
+				fmt.Println("收到单个确认包", head.seq, head.bitmask)
 				if self.sendData.header[head.seq] != nil {
 					self.sendData.header[head.seq].time_ack = now
 					//self.sendData.header[head.seq] = nil
