@@ -313,7 +313,7 @@ func (self *UdpTask) FillLastokAckHead(head *UdpHeader) {
 	}
 }
 func (self *UdpTask) Loop() {
-	timersend := time.NewTicker(time.Millisecond * 10)
+	timersend := time.NewTicker(time.Millisecond * 5)
 	timerack := time.NewTicker(time.Millisecond * 20)
 	timersec := time.NewTicker(time.Second)
 	timercheckack := time.NewTimer(time.Millisecond * 10)
