@@ -162,8 +162,11 @@ func (self *UdpTask) SendData(b []byte) bool {
 func (self *UdpTask) sendMsg(head *UdpHeader) (int, error) {
 	//if head.seq-self.sendData.lastok >= 100 && head.seq != self.sendData.lastok+1 {
 	if head.seq-self.sendData.lastok >= 100 && head.seq != self.sendData.lastok+1 {
-		fmt.Println("缓冲区满,等待下次发送", head.seq, self.sendData.curseq, self.sendData.lastok, self.sendData.maxok)
+		//fmt.Println("缓冲区满,等待下次发送", head.seq, self.sendData.curseq, self.sendData.lastok, self.sendData.maxok)
 		return 0, nil
+	}
+	if head.seq-self.sendData.lastok >= 98 {
+		fmt.Println("缓冲区满要满了,等待下次发送", head.seq, self.sendData.curseq, self.sendData.lastok, self.sendData.maxok)
 	}
 	n, _, err := self.conn.WriteMsgUDP(head.Serialize(), nil, self.addr)
 	if n == 0 {
@@ -224,7 +227,7 @@ func (self *UdpTask) CheckSendLostMsg() {
 				//发现有更新的包已经确认,所有老包直接重发
 				oldtime := self.sendData.header[i].time_send
 				n, _ := self.sendMsg(self.sendData.header[i])
-				fmt.Println("丢包重发", i, n, self.sendData.lastok, self.sendData.maxok, now, oldtime, now-oldtime)
+				fmt.Println("丢包重发", now, i, n, self.sendData.lastok, self.sendData.maxok, now, oldtime, now-oldtime)
 				if n == 0 {
 					break
 				}
@@ -255,9 +258,6 @@ func isset_state(state byte, teststate uint16) bool {
 func set_state(state byte, teststate uint16) byte {
 	state |= (0xff & (1 << (teststate % 8)))
 	return state
-}
-func (self *UdpTask) FillOkAckHead(head *UdpHeader) {
-	self.FillMaxokAckHead(head)
 }
 func (self *UdpTask) FillMaxokAckHead(head *UdpHeader) {
 	head.bitmask = 0
@@ -396,11 +396,14 @@ func (self *UdpTask) Loop() {
 				if head1.seq <= self.recvData.lastok {
 					head1.bitmask |= 1
 					head1.seq = self.recvData.lastok
+					self.FillLastokAckHead(head)
 				} else if head1.seq == self.recvData.lastok+1 {
 					head1.bitmask |= 1
 					head1.seq = self.recvData.lastok + 1
+					self.FillLastokAckHead(head1)
 				} else {
 					head1.seq = head.seq
+					self.FillMaxokAckHead(head1)
 				}
 				self.sendAck(head1)
 				self.num_waste++
@@ -432,11 +435,7 @@ func (self *UdpTask) Loop() {
 				if self.recvData.header[i] != nil && self.recvData.header[i].seq != 0 {
 					head := &UdpHeader{}
 					head.seq = self.recvData.header[i].seq
-					if i == self.recvData.maxok {
-						self.FillMaxokAckHead(head)
-					} else {
-						self.FillOkAckHead(head)
-					}
+					self.FillMaxokAckHead(head)
 					n, _ := self.sendAck(head)
 					if n != 0 {
 						self.recvData.header[i].seq = 0
