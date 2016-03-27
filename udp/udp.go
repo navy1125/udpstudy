@@ -160,6 +160,7 @@ func (self *UdpTask) SendData(b []byte) bool {
 	return true
 }
 func (self *UdpTask) sendMsg(head *UdpHeader) (int, error) {
+	//if head.seq-self.sendData.lastok >= 100 && head.seq != self.sendData.lastok+1 {
 	if head.seq-self.sendData.lastok >= 100 && head.seq != self.sendData.lastok+1 {
 		fmt.Println("缓冲区满,等待下次发送", head.seq, self.sendData.curseq, self.sendData.lastok, self.sendData.maxok)
 		return 0, nil
@@ -303,7 +304,7 @@ func (self *UdpTask) Loop() {
 		case head := <-self.recvAckCh:
 			//self.Test = true
 			now = int64(time.Now().UnixNano() / int64(time.Millisecond))
-			//fmt.Println("收确认包", head.seq)
+			//fmt.Println("收确认包", now,head.seq)
 			ismax := false
 			if head.seq >= self.sendData.maxok {
 				ismax = true
@@ -311,13 +312,13 @@ func (self *UdpTask) Loop() {
 				if self.sendData.header[head.seq] != nil && self.sendData.header[head.seq].timeout_times == 0 {
 					self.ping = now - self.sendData.header[head.seq].time_send
 					if self.ping < 0 {
-						fmt.Println("PING值错误:", head.seq, now, self.sendData.header[head.seq].time_send, self.ping, self.sendData.header[head.seq].timeout_times)
+						fmt.Println("PING值错误:", now, head.seq, now, self.sendData.header[head.seq].time_send, self.ping, self.sendData.header[head.seq].timeout_times)
 					}
 				}
 			}
 			if head.bitmask&1 == 1 {
 				self.num_recv_acklist++
-				fmt.Println("批量确认包完成", self.sendData.lastok, head.seq, self.sendData.maxok, head.datasize, head.bitmask)
+				fmt.Println("批量确认包完成", now, self.sendData.lastok, head.seq, self.sendData.maxok, head.datasize, head.bitmask)
 				for i := self.sendData.lastok; i <= head.seq; i++ {
 					self.sendData.header[i] = nil
 				}
@@ -326,7 +327,7 @@ func (self *UdpTask) Loop() {
 					for i := uint16(0); i <= 7; i++ {
 						if isset_state(head.datasize, i) {
 							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
-								fmt.Println("last datasize补漏成功:", head.seq, next, head.datasize)
+								fmt.Println("last datasize补漏成功:", now, head.seq, next, head.datasize)
 								self.sendData.header[next].time_ack = now
 							}
 						}
@@ -337,7 +338,7 @@ func (self *UdpTask) Loop() {
 					for i := uint16(1); i <= 7; i++ {
 						if isset_state(head.bitmask, i) {
 							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
-								fmt.Println("last bitmask补漏成功:", head.seq, next, head.bitmask)
+								fmt.Println("last bitmask补漏成功:", now, head.seq, next, head.bitmask)
 								self.sendData.header[next].time_ack = now
 							}
 						}
@@ -346,7 +347,7 @@ func (self *UdpTask) Loop() {
 				}
 			} else {
 				self.num_recv_ack++
-				fmt.Println("收到单个确认包", head.seq, head.bitmask)
+				fmt.Println("收到单个确认包", now, head.seq, self.sendData.maxok, self.sendData.lastok, head.bitmask)
 				if self.sendData.header[head.seq] != nil {
 					self.sendData.header[head.seq].time_ack = now
 					//self.sendData.header[head.seq] = nil
@@ -356,7 +357,7 @@ func (self *UdpTask) Loop() {
 					for i := uint16(1); i <= 7; i++ {
 						if isset_state(head.bitmask, i) {
 							if self.sendData.header[next] != nil && self.sendData.header[next].time_ack == 0 {
-								fmt.Println("max bitmask补漏成功:", head.seq, next, head.bitmask)
+								fmt.Println("max bitmask补漏成功:", now, head.seq, next, head.bitmask)
 								self.sendData.header[next].time_ack = now
 							}
 						}
