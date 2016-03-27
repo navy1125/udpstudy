@@ -229,6 +229,7 @@ func (self *UdpTask) CheckSendLostMsg() {
 				diff := now - self.sendData.header[i].time_send
 				if diff >= self.ping*(int64(i-self.sendData.lastok)+self.sendData.header[i].lost_times+1)+int64(i-self.sendData.lastok)*30 {
 					//发现有更新的包已经确认,所有老包直接重发
+					self.sendData.header[i].bitmask |= 2
 					oldtime := self.sendData.header[i].time_send
 					n, _ := self.sendMsg(self.sendData.header[i])
 					fmt.Println("丢包重发", now, i, n, self.sendData.lastok, self.sendData.maxok, now, oldtime, diff)
@@ -251,7 +252,7 @@ func (self *UdpTask) CheckLastok() {
 		//if self.sendData.header[i] != nil && self.sendData.header[i].time_ack != 0 {
 		if self.sendData.header[i] != nil {
 			if self.sendData.maxok-self.sendData.lastok >= 102 {
-				fmt.Println("等待乱序确认异常", int64(time.Now().UnixNano()/int64(time.Millisecond)), self.sendData.lastok, self.sendData.maxok)
+				//fmt.Println("等待乱序确认异常", int64(time.Now().UnixNano()/int64(time.Millisecond)), self.sendData.lastok, self.sendData.maxok)
 			}
 			break
 		}
@@ -355,7 +356,7 @@ func (self *UdpTask) Loop() {
 				}
 			} else {
 				self.num_recv_ack++
-				fmt.Println("收到单个确认包", now, head.seq, self.sendData.maxok, self.sendData.lastok, head.seq-(head.seq%2)*7-1, head.bitmask)
+				fmt.Println(fmt.Sprintf("收到单个SEQ:%5d,完成SEQ:%5d,最大SEQ:%5d,%5d,%5d", head.seq, self.sendData.lastok, self.sendData.maxok, head.seq-(head.seq%2)*7-1, head.bitmask))
 				if self.sendData.header[head.seq] != nil {
 					self.sendData.header[head.seq].time_ack = now
 					//self.sendData.header[head.seq] = nil
@@ -380,6 +381,9 @@ func (self *UdpTask) Loop() {
 			self.CheckLastok()
 		case head := <-self.recvDataCh:
 			if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
+				if (head.bitmask & 2) == 2 {
+					fmt.Println(fmt.Sprintf("重发有效SEQ:%5d,数据大小:%3d,完成SEQ:%5d,浪费数量:%5d", head.seq, head.datasize, self.recvData.lastok, self.num_waste))
+				}
 				self.num_recv_data++
 				self.recvData.header[head.seq] = head
 				if head.seq >= self.recvData.maxok {
@@ -416,7 +420,7 @@ func (self *UdpTask) Loop() {
 				}
 				self.sendAck(head1)
 				self.num_waste++
-				fmt.Println("收到过期数据包", head.seq, head.datasize, self.recvData.lastok, self.num_waste)
+				fmt.Println(fmt.Sprintf("收到过期SEQ:%5d,数据大小:%3d,完成SEQ:%5d,浪费数量:%5d", head.seq, head.datasize, self.recvData.lastok, self.num_waste))
 			}
 		case <-timersec.C:
 			fmt.Println(fmt.Sprintf("完成SEQ:%5d,最大SEQ:%5d,接收包:%5d,发送包:%5d,重发包:%5d,超时包:%5d,接受ACKLIST:%5d,接受ACK:%5d,发送ACKLIST:%5d,发送ACK:%5d,重复接收包:%5d,PING:%4d,PING_MAX:%4d:%d", self.sendData.lastok, self.sendData.maxok, self.num_recv_data, self.num_send, self.num_resend, self.num_timeout, self.num_recv_acklist, self.num_recv_ack, self.num_acklist, self.num_ack, self.num_waste, self.ping, self.ping_max, self.ping_max_seq))
