@@ -227,7 +227,7 @@ func (self *UdpTask) CheckSendLostMsg() {
 			//fmt.Println("尝试丢包重发", i, self.sendData.lastok, self.sendData.maxok)
 			if self.sendData.header[i] != nil {
 				diff := now - self.sendData.header[i].time_send
-				if diff >= self.ping*(self.sendData.header[i].lost_times+1)+int64(i-self.sendData.lastok)*50 {
+				if diff >= self.ping*(int64(i-self.sendData.lastok)+self.sendData.header[i].lost_times+1)+int64(i-self.sendData.lastok)*30 {
 					//发现有更新的包已经确认,所有老包直接重发
 					oldtime := self.sendData.header[i].time_send
 					n, _ := self.sendMsg(self.sendData.header[i])
@@ -382,7 +382,7 @@ func (self *UdpTask) Loop() {
 			if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
 				self.num_recv_data++
 				self.recvData.header[head.seq] = head
-				if head.seq > self.recvData.maxok {
+				if head.seq >= self.recvData.maxok {
 					self.recvData.maxok = head.seq
 				} else {
 					head1 := &UdpHeader{}
@@ -391,18 +391,6 @@ func (self *UdpTask) Loop() {
 					n, _ := self.sendAck(head1)
 					if n != 0 {
 						head.seq = 0
-					}
-					if head1.bitmask == 0 {
-						next := head1.seq - (head1.seq%2)*7 - 1
-						for i := uint16(1); i <= 7; i++ {
-							if self.recvData.header[next] != nil {
-								head1.bitmask = set_state(head1.bitmask, i)
-								fmt.Println("head1.bitmask", next, i, head1.bitmask)
-							} else {
-								fmt.Println("head1.bitmask", next, i, nil)
-							}
-							next--
-						}
 					}
 				}
 				for i := self.recvData.lastok; i <= self.recvData.maxok; i++ {
