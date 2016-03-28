@@ -167,7 +167,7 @@ func (self *UdpTask) sendMsg(head *UdpHeader, force bool) (int, error) {
 		//fmt.Println("缓冲区满,等待下次发送", head.seq, self.sendData.curseq, self.sendData.lastok, self.sendData.maxok)
 		return 0, nil
 	}
-	if head.seq-self.sendData.lastok >= 1000 {
+	if head.seq-self.sendData.lastok >= 1000 && self.ping_max < 5000 && force == true {
 		fmt.Println("缓冲区满要满了,等待下次发送", head.seq, self.sendData.curseq, self.sendData.lastok, self.sendData.maxok)
 	}
 	n, _, err := self.conn.WriteMsgUDP(head.Serialize(), nil, self.addr)
