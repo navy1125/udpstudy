@@ -157,7 +157,7 @@ func (self *UdpTask) SendData(b []byte) bool {
 		self.sendData.header[head.seq] = head
 		self.sendData.curseq++
 		if self.sendData.curseq == 65535 {
-			self.sendData.curseq = 0
+			//self.sendData.curseq = 0
 		}
 	}
 	return true
@@ -398,7 +398,7 @@ func (self *UdpTask) Loop() {
 			}
 			self.CheckLastok()
 		case head := <-self.recvDataCh:
-			//self.Test = true
+			self.Test = true
 			if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
 				if (head.bitmask & 2) == 2 {
 					self.num_recv_data2++
