@@ -376,6 +376,7 @@ func (self *TcpTask) LoopRecv() {
 				copy(b, b[offset:all])
 				all -= offset
 			} else {
+				fmt.Println("self.conn.Read: ", left, n, all, int(head.datasize))
 				break
 			}
 			if head.datasize > 0 && (head.bitmask&1 == 0) {

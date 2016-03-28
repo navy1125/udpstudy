@@ -44,7 +44,7 @@ func (self *UdpHeader) Unserialize(b []byte, all int) int {
 		datasize = int(self.datasize)
 	}
 	if all < datasize+self.GetHeadSize() {
-		fmt.Println("Unserialize: ", all, datasize)
+		//fmt.Println("Unserialize: ", all, datasize)
 		return 0
 	}
 	seq := b[2:self.GetHeadSize()]
