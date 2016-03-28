@@ -334,7 +334,7 @@ func (self *UdpTask) Loop() {
 						fmt.Println("PING值错误:", now, head.seq, now, self.sendData.header[head.seq].time_send, self.ping)
 					}
 				}
-			} else if self.ping > 1000 && self.ping < now-self.sendData.header[head.seq].time_send {
+			} else if self.ping > 1000 && self.sendData.header[head.seq] != nil && self.ping < now-self.sendData.header[head.seq].time_send {
 				self.ping = now - self.sendData.header[head.seq].time_send
 			}
 			if head.bitmask&1 == 1 {
