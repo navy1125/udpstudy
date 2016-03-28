@@ -477,7 +477,6 @@ func (self *UdpTask) Loop() {
 					if n != 0 {
 						self.recvData.header[i].seq = 0
 						self.num_ack++
-						fmt.Println(i, self.recvData.curack, self.recvData.lastok, self.recvData.maxok)
 					}
 				}
 			}
