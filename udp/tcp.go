@@ -75,7 +75,7 @@ func (self *TcpTask) SendData(b []byte) bool {
 			head.data = b[cur:bsize]
 			offset = bsize - cur
 		}
-		self.conn.SetWriteDeadline(time.Now().Add(time.Duration(1 * 2 * int64(time.Second))))
+		//self.conn.SetWriteDeadline(time.Now().Add(time.Duration(1 * 2 * int64(time.Second))))
 		n, err := self.sendMsg(head, false)
 		if err != nil {
 			fmt.Println("消息发送失败1", self.sendData.curseq, n, err)
