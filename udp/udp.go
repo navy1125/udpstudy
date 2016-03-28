@@ -169,7 +169,7 @@ func (self *UdpTask) sendMsg(head *UdpHeader, force bool) (int, error) {
 		return 0, nil
 	}
 	if head.seq-self.sendData.lastok >= 1000 && self.ping_max < 5000 && force == true {
-		fmt.Println("缓冲区满要满了,等待下次发送", head.seq, self.sendData.curseq, self.sendData.lastok, self.sendData.maxok)
+		//fmt.Println("缓冲区满要满了,等待下次发送", head.seq, self.sendData.curseq, self.sendData.lastok, self.sendData.maxok)
 	}
 	n, _, err := self.conn.WriteMsgUDP(head.Serialize(), nil, self.addr)
 	if n == 0 {
@@ -235,9 +235,9 @@ func (self *UdpTask) CheckSendLostMsg() {
 			if diff >= self.ping*(int64(i-self.sendData.lastok)+self.sendData.header[i].lost_times+1)+int64(i-self.sendData.lastok)*30 {
 				//发现有更新的包已经确认,所有老包直接重发
 				self.sendData.header[i].bitmask |= 2
-				oldtime := self.sendData.header[i].time_send
+				//oldtime := self.sendData.header[i].time_send
 				n, _ := self.sendMsg(self.sendData.header[i], true)
-				fmt.Println("丢包重发", now, i, n, self.sendData.lastok, self.sendData.maxok, now, oldtime, diff)
+				//fmt.Println("丢包重发", now, i, n, self.sendData.lastok, self.sendData.maxok, now, oldtime, diff)
 				if n == 0 {
 					break
 				}
@@ -398,7 +398,7 @@ func (self *UdpTask) Loop() {
 			}
 			self.CheckLastok()
 		case head := <-self.recvDataCh:
-			self.Test = true
+			//self.Test = true
 			if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
 				if (head.bitmask & 2) == 2 {
 					self.num_recv_data2++

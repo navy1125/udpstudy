@@ -23,7 +23,7 @@ func main() {
 		fmt.Println("net.DialUDP err:", err)
 		return
 	}
-	//udptask.Test = true
+	udptask.Test = true
 	go udptask.Loop()
 	go udptask.LoopRecv()
 
@@ -38,7 +38,7 @@ func main() {
 		fmt.Println("net.DialUDP err:", err)
 		return
 	}
-	tcptask.Test = true
+	//tcptask.Test = true
 	go tcptask.Loop()
 	tcptask.LoopRecv()
 }
