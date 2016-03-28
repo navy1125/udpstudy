@@ -17,7 +17,7 @@ func main() {
 	go udptask.Loop()
 	go udptask.LoopRecv()
 
-	tcpaddr, err := net.ResolveTCPAddr("tcp", ":10002")
+	tcpaddr, err := net.ResolveTCPAddr("tcp", ":11001")
 	if err != nil {
 		fmt.Println("net.ResolveTCPAddr err:", err)
 		return

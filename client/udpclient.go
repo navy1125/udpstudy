@@ -7,8 +7,8 @@ import (
 )
 
 var (
-	//url = "14.17.104.56"
-	url = "127.0.0.1"
+	url = "14.17.104.56"
+	//url = "127.0.0.1"
 )
 
 func main() {
@@ -27,7 +27,7 @@ func main() {
 	go udptask.Loop()
 	go udptask.LoopRecv()
 
-	tcpaddr, err := net.ResolveTCPAddr("tcp", url+":10002")
+	tcpaddr, err := net.ResolveTCPAddr("tcp", url+":11001")
 	if err != nil {
 		fmt.Println("net.ResolveTCPAddr err:", err)
 		return
