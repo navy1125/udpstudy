@@ -143,7 +143,7 @@ func (self *UdpTask) SendData(b []byte) bool {
 		self.conn.SetWriteDeadline(time.Now().Add(time.Duration(1 * 2 * int64(time.Second))))
 		n, err := self.sendMsg(head, false)
 		if err != nil {
-			fmt.Println("消息发送失败", self.sendData.curseq, n, err)
+			fmt.Println("消息发送失败2", self.sendData.curseq, n, err)
 		}
 		if n == 0 {
 			if self.wait == nil {
@@ -443,7 +443,7 @@ func (self *UdpTask) Loop() {
 				fmt.Println(fmt.Sprintf("收到过期SEQ:%5d,数据大小:%3d,完成SEQ:%5d,浪费数量:%5d", head.seq, head.datasize, self.recvData.lastok, self.num_waste))
 			}
 		case <-timersec.C:
-			fmt.Println(fmt.Sprintf("完成SEQ:%5d,最大SEQ:%5d,接包:%5d,重接包:%5d,发包:%5d,重发包:%5d,超时包:%5d,接受ACKLIST:%5d,接受ACK:%5d,发送ACKLIST:%5d,发送ACK:%5d,重收包:%5d,PING:%4d,PING_MAX:%4d:%d", self.sendData.lastok, self.sendData.maxok, self.num_recv_data, self.num_recv_data2, self.num_send, self.num_resend, self.num_timeout, self.num_recv_acklist, self.num_recv_ack, self.num_acklist, self.num_ack, self.num_waste, self.ping, self.ping_max, self.ping_max_seq))
+			fmt.Println(fmt.Sprintf("完成SEQ:%5d,最大SEQ:%5d,接包:%5d,重接包:%5d,发包:%5d,重发包:%5d,超时包:%d,接受ACKLIST:%5d,接受ACK:%5d,发送ACKLIST:%5d,发送ACK:%5d,重收包:%5d,PING:%4d,PING_MAX:%4d:%d", self.sendData.lastok, self.sendData.maxok, self.num_recv_data, self.num_recv_data2, self.num_send, self.num_resend, self.num_timeout, self.num_recv_acklist, self.num_recv_ack, self.num_acklist, self.num_ack, self.num_waste, self.ping, self.ping_max, self.ping_max_seq))
 		case <-timercheckack.C:
 			self.CheckReSendAck()
 			if self.last_ack_times != 0 {
@@ -459,13 +459,13 @@ func (self *UdpTask) Loop() {
 				n, _ := self.sendAck(head)
 				if n != 0 {
 					self.num_acklist++
-					self.recvData.header[self.recvData.curack].seq = 0
 					if self.recvData.lastok-self.recvData.curack >= 3 {
 						self.last_ack = head
 						self.last_ack_times = int((self.recvData.lastok-self.recvData.curack)/64) + 1
 						timercheckack.Reset(time.Millisecond * 10)
 					}
 					self.recvData.curack = self.recvData.lastok
+					self.recvData.header[self.recvData.curack].seq = 0
 				}
 			}
 			for i := self.recvData.curack; i <= self.recvData.maxok; i++ {
@@ -477,6 +477,7 @@ func (self *UdpTask) Loop() {
 					if n != 0 {
 						self.recvData.header[i].seq = 0
 						self.num_ack++
+						fmt.Println(i, self.recvData.curack, self.recvData.lastok, self.recvData.maxok)
 					}
 				}
 			}
@@ -542,6 +543,7 @@ func (self *UdpTask) LoopRecv() {
 				self.recvAckCh <- head
 			}
 		}
+		left = all
 	}
 }
 func (self *UdpTask) Dial(addr *net.UDPAddr) (err error) {

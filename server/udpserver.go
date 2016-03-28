@@ -8,12 +8,26 @@ import (
 
 func main() {
 	addr, err := net.ResolveUDPAddr("udp", ":10001")
-	udp := udp.NewUdpTask()
-	err = udp.Listen(addr)
+	udptask := udp.NewUdpTask()
+	err = udptask.Listen(addr)
 	if err != nil {
 		fmt.Println("net.ListenUDP err:", err)
 		return
 	}
-	go udp.Loop()
-	udp.LoopRecv()
+	go udptask.Loop()
+	go udptask.LoopRecv()
+
+	tcpaddr, err := net.ResolveTCPAddr("tcp", ":10002")
+	if err != nil {
+		fmt.Println("net.ResolveTCPAddr err:", err)
+		return
+	}
+	tcptask := udp.NewTcpTask()
+	err = tcptask.Listen(tcpaddr)
+	if err != nil {
+		fmt.Println("net.Listen err:", err)
+		return
+	}
+	go tcptask.Loop()
+	tcptask.LoopRecv()
 }
