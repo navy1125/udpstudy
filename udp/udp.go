@@ -40,16 +40,16 @@ func (self *UdpHeader) Serialize() []byte {
 func (self *UdpHeader) Unserialize(b []byte, all int) int {
 	self.datasize = b[0]
 	self.bitmask = b[1]
+	seq := b[2:self.GetHeadSize()]
+	self.seq = uint16((int(seq[1]) << 8) + int(seq[0]))
 	datasize := 0
-	if self.bitmask&1 == 0 {
+	if self.seq != 0 && self.bitmask&1 == 0 {
 		datasize = int(self.datasize)
 	}
 	if all < datasize+self.GetHeadSize() {
 		//fmt.Println("Unserialize: ", all, datasize)
 		return 0
 	}
-	seq := b[2:self.GetHeadSize()]
-	self.seq = uint16((int(seq[1]) << 8) + int(seq[0]))
 	if datasize > 0 {
 		self.data = b[self.GetHeadSize() : self.GetHeadSize()+datasize]
 	}
@@ -166,15 +166,19 @@ func (self *UdpTask) SendData(b []byte) bool {
 			cur += offset
 		}
 		self.sendData.header[head.seq] = head
+		if self.sendData.curseq == 65534 {
+			return false
+		}
 		self.sendData.curseq++
 		if self.sendData.curseq == 65535 {
+			self.sendData.curseq = 1
 			//self.sendData.curseq = 0
 		}
 	}
 	return true
 }
 func (self *UdpTask) sendMsg(head *UdpHeader, force bool) (int, error) {
-	if self.is_server {
+	if head.seq == 0 {
 		panic("ddd")
 	}
 	//if head.seq-self.sendData.lastok >= 100 && head.seq != self.sendData.lastok+1 {
@@ -203,6 +207,9 @@ func (self *UdpTask) sendAck(head *UdpHeader) (int, error) {
 		panic("ddd")
 	}
 	n, err := self.conn_tcp.Write(head.Serialize())
+	if n != head.GetAllSize() {
+		panic("ddd")
+	}
 	return n, err
 }
 func (self *UdpTask) sendMsgTCP(head *UdpHeader) (int, error) {
@@ -220,7 +227,7 @@ func (self *UdpTask) CheckSendLostMsg() {
 				self.sendData.header[i].bitmask |= 2
 				//oldtime := self.sendData.header[i].time_send
 				n, _ := self.sendMsg(self.sendData.header[i], true)
-				//fmt.Println("丢包重发", now, i, n, self.sendData.lastok, self.sendData.maxok, now, oldtime, diff)
+				//fmt.Println("丢包重发", now, i, self.sendData.lastok, self.resendmax, self.sendData.maxok, now, diff)
 				if n == 0 {
 					break
 				}
@@ -261,7 +268,7 @@ func set_state(state byte, teststate uint16) byte {
 	state |= (0xff & (1 << (teststate % 8)))
 	return state
 }
-func (self *UdpTask) FillMaxokAckHead(head *UdpHeader) (timeout_seq uint16) {
+func (self *UdpTask) FillMaxokAckHead(head *UdpHeader) (timeout_seq uint16, need bool) {
 	now := int64(time.Now().UnixNano() / int64(time.Millisecond))
 	head.bitmask = 0
 	next := head.seq + 1
@@ -272,12 +279,14 @@ func (self *UdpTask) FillMaxokAckHead(head *UdpHeader) (timeout_seq uint16) {
 				timeout_seq = next
 			}
 			self.recvData.header[next].seq = 0
+		} else {
+			need = true
 		}
 		next++
 	}
 	return
 }
-func (self *UdpTask) FillLastokAckHead(head *UdpHeader) (timeout_seq uint16) {
+func (self *UdpTask) FillLastokAckHead(head *UdpHeader) (timeout_seq uint16, need bool) {
 	now := int64(time.Now().UnixNano() / int64(time.Millisecond))
 	head.datasize = 0
 	next := head.seq + 1 + 1 //不算当前,不算下一个,因为下一个必定是nil
@@ -289,6 +298,8 @@ func (self *UdpTask) FillLastokAckHead(head *UdpHeader) (timeout_seq uint16) {
 					timeout_seq = next
 				}
 				self.recvData.header[next].seq = 0
+			} else {
+				need = true
 			}
 		} else {
 			break
@@ -303,6 +314,8 @@ func (self *UdpTask) FillLastokAckHead(head *UdpHeader) (timeout_seq uint16) {
 					timeout_seq = next
 				}
 				self.recvData.header[next].seq = 0
+			} else {
+				need = true
 			}
 		} else {
 			break
@@ -323,6 +336,7 @@ func (self *UdpTask) Loop() {
 			now = int64(time.Now().UnixNano() / int64(time.Millisecond))
 			if head.seq == 0 {
 				self.resendmax = uint16(head.bitmask)<<8 + uint16(head.datasize)
+				//fmt.Println("收到请求重发", now, self.resendmax, head.bitmask, head.datasize)
 				self.CheckSendLostMsg()
 			} else {
 				if self.is_server {
@@ -434,20 +448,20 @@ func (self *UdpTask) Loop() {
 				self.recvData.lastok = i
 			}
 			timeout_seq := uint16(0)
+			timeou_need := false
 			if self.recvData.curack < self.recvData.lastok {
 				head := &UdpHeader{}
 				head.seq = self.recvData.lastok
 				head.bitmask |= 1
-				tmp := self.FillLastokAckHead(head)
-				if tmp > 0 {
+				tmp, need := self.FillLastokAckHead(head)
+				if tmp > 0 && need {
 					timeout_seq = tmp
+					timeou_need = true
 				}
-				n, _ := self.sendAck(head)
-				if n != 0 {
-					self.num_acklist++
-					self.recvData.curack = self.recvData.lastok
-					self.recvData.header[self.recvData.curack].seq = 0
-				}
+				self.sendAck(head)
+				self.num_acklist++
+				self.recvData.curack = self.recvData.lastok
+				self.recvData.header[self.recvData.curack].seq = 0
 			}
 			if self.recvData.header[self.recvData.maxok] != nil {
 				for i := self.recvData.curack; i <= self.recvData.maxok; i++ {
@@ -458,27 +472,29 @@ func (self *UdpTask) Loop() {
 						if self.recvData.header[i].seq != 0 {
 							head := &UdpHeader{}
 							head.seq = self.recvData.header[i].seq
-							tmp := self.FillMaxokAckHead(head)
-							if tmp > 0 {
+							tmp, need := self.FillMaxokAckHead(head)
+							if tmp > 0 && need {
 								timeout_seq = tmp
+								timeou_need = true
 							}
 							if !self.is_server {
 								fmt.Println("发确认包", now, head.seq, head.bitmask, head.datasize)
 							}
-							n, _ := self.sendAck(head)
-							if n != 0 {
-								self.recvData.header[i].seq = 0
-								self.num_ack++
-							}
+							self.sendAck(head)
+							self.recvData.header[i].seq = 0
+							self.num_ack++
 						}
+					} else {
+						timeou_need = true
 					}
 				}
 			}
-			if timeout_seq > 0 {
+			if timeout_seq > 0 && timeou_need {
 				head := &UdpHeader{}
 				head.seq = 0
 				head.bitmask = byte(timeout_seq >> 8)
 				head.datasize = byte(timeout_seq & 0xff)
+				fmt.Println("请求重发", now, timeout_seq, head.bitmask, head.datasize)
 				self.sendAck(head)
 			}
 		case <-timersend.C:
@@ -543,6 +559,9 @@ func (self *UdpTask) LoopRecvUDP() {
 				}
 				self.recvDataCh <- head
 			} else {
+				if self.is_server {
+					fmt.Println("LoopRecvUDP: ", left, n, all, head.seq, head.datasize, head.bitmask, head.GetAllSize())
+				}
 				self.recvAckCh <- head
 			}
 		}
@@ -563,7 +582,7 @@ func (self *UdpTask) LoopRecvTCP() {
 			head := &UdpHeader{}
 			offset := head.Unserialize(b, all)
 			if offset > 0 {
-				//fmt.Println("ReadFromUDP: ", left, n, all, int(head.datasize))
+				//fmt.Println("LoopRecvTCP: ", left, n, all, head.seq, head.datasize, head.bitmask, head.GetAllSize())
 				copy(b, b[offset:all])
 				all -= offset
 			} else {
@@ -571,10 +590,13 @@ func (self *UdpTask) LoopRecvTCP() {
 			}
 			if head.seq != 0 && head.datasize > 0 && (head.bitmask&1 == 0) {
 				if !self.is_server {
-					fmt.Println("LoopRecvTCP: ", left, n, all, int(head.datasize))
+					//fmt.Println("LoopRecvTCP: ", left, n, all, head.GetAllSize())
 				}
 				self.recvDataCh <- head
 			} else {
+				if self.is_server {
+					fmt.Println("LoopRecvTCP: ", left, n, all, head.seq, head.datasize, head.bitmask, head.GetAllSize())
+				}
 				self.recvAckCh <- head
 			}
 		}
