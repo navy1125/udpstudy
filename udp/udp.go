@@ -340,9 +340,6 @@ func (self *UdpTask) Loop() {
 				//fmt.Println("收到请求重发", now, self.resendmax, head.bitmask, head.datasize)
 				self.CheckSendLostMsg()
 			} else {
-				if self.is_server {
-					fmt.Println("收确认包", now, head.seq, head.bitmask, head.datasize)
-				}
 				//ismax := false
 				if head.seq >= self.sendData.maxok {
 					//ismax = true
@@ -415,9 +412,6 @@ func (self *UdpTask) Loop() {
 			}
 			self.CheckLastok()
 		case head := <-self.recvDataCh:
-			if !self.is_server {
-				fmt.Println("收数据包", now, head.seq, head.bitmask, head.datasize)
-			}
 			self.Test = true
 			if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
 				if (head.bitmask & 2) == 2 {
@@ -477,9 +471,6 @@ func (self *UdpTask) Loop() {
 							if tmp > 0 && need {
 								timeout_seq = tmp
 								timeou_need = true
-							}
-							if !self.is_server {
-								fmt.Println("发确认包", now, head.seq, head.bitmask, head.datasize)
 							}
 							self.sendAck(head)
 							self.recvData.header[i].seq = 0
@@ -556,14 +547,8 @@ func (self *UdpTask) LoopRecvUDP() {
 				break
 			}
 			if head.seq != 0 && head.datasize > 0 && (head.bitmask&1 == 0) {
-				if !self.is_server {
-					fmt.Println("LoopRecvUDP: ", left, n, all, int(head.datasize))
-				}
 				self.recvDataCh <- head
 			} else {
-				if self.is_server {
-					fmt.Println("LoopRecvUDP: ", left, n, all, head.seq, head.datasize, head.bitmask, head.GetAllSize())
-				}
 				self.recvAckCh <- head
 			}
 		}
@@ -596,9 +581,6 @@ func (self *UdpTask) LoopRecvTCP() {
 				}
 				self.recvDataCh <- head
 			} else {
-				if self.is_server {
-					fmt.Println("LoopRecvTCP: ", left, n, all, head.seq, head.datasize, head.bitmask, head.GetAllSize())
-				}
 				self.recvAckCh <- head
 			}
 		}
