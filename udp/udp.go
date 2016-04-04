@@ -12,7 +12,7 @@ var (
 	HEADLEN = 4
 )
 
-type UdpHeader struct {
+type UdpFrame struct {
 	datasize      byte
 	bitmask       byte
 	seq           uint16
@@ -23,8 +23,19 @@ type UdpHeader struct {
 	timeout_times int64
 	data          []byte
 }
+type SendUdpFrame struct {
+	UdpFrame
+	time_send     int64
+	time_ack      int64
+	lost_times    int64
+	timeout_times int64
+}
+type RecvUdpFrame struct {
+	UdpFrame
+	time_recv int64
+}
 
-func (self *UdpHeader) Serialize() []byte {
+func (self *UdpFrame) Serialize() []byte {
 	datasize := byte(len(self.data))
 	if datasize != 0 {
 		self.datasize = datasize
@@ -37,7 +48,7 @@ func (self *UdpHeader) Serialize() []byte {
 	return buf.Bytes()
 }
 
-func (self *UdpHeader) Unserialize(b []byte, all int) int {
+func (self *UdpFrame) Unserialize(b []byte, all int) int {
 	self.datasize = b[0]
 	self.bitmask = b[1]
 	seq := b[2:self.GetHeadSize()]
@@ -55,33 +66,40 @@ func (self *UdpHeader) Unserialize(b []byte, all int) int {
 	}
 	return self.GetAllSize()
 }
-func (self *UdpHeader) GetAllSize() int {
+func (self *UdpFrame) GetAllSize() int {
 	return self.GetDataSize() + self.GetHeadSize()
 }
-func (self *UdpHeader) GetDataSize() int {
+func (self *UdpFrame) GetDataSize() int {
 	return len(self.data)
 }
-func (self *UdpHeader) GetHeadSize() int {
+func (self *UdpFrame) GetHeadSize() int {
 	return HEADLEN
 }
 
-type UdpData struct {
+type SendUdpData struct {
 	curseq uint16
 	lastok uint16
 	maxok  uint16
 	curack uint16
-	header [65536]*UdpHeader
+	header [65536]*SendUdpFrame
+	wait   *bytes.Buffer
+}
+
+type RecvUdpData struct {
+	lastok uint16
+	maxok  uint16
+	curack uint16
+	header [65536]*RecvUdpFrame
 }
 
 type UdpTask struct {
 	conn_tcp         *net.TCPConn
 	conn_udp         *net.UDPConn
 	addr             *net.UDPAddr
-	recvData         *UdpData
-	sendData         *UdpData
-	wait             *bytes.Buffer
-	recvDataCh       chan *UdpHeader
-	recvAckCh        chan *UdpHeader
+	sendData         *SendUdpData
+	recvData         *RecvUdpData
+	recvDataCh       chan *RecvUdpFrame
+	recvAckCh        chan *RecvUdpFrame
 	Test             bool
 	is_server        bool
 	num_resend       int
@@ -103,31 +121,30 @@ type UdpTask struct {
 
 func NewUdpTask() *UdpTask {
 	task := &UdpTask{
-		recvData: &UdpData{
+		recvData: &RecvUdpData{
+			lastok: 1,
+			maxok:  1,
+			curack: 1,
+		},
+		sendData: &SendUdpData{
 			curseq: 1,
 			lastok: 1,
 			maxok:  1,
 			curack: 1,
 		},
-		sendData: &UdpData{
-			curseq: 1,
-			lastok: 1,
-			maxok:  1,
-			curack: 1,
-		},
-		recvDataCh: make(chan *UdpHeader, 1024),
-		recvAckCh:  make(chan *UdpHeader, 1024),
+		recvDataCh: make(chan *RecvUdpFrame, 1024),
+		recvAckCh:  make(chan *RecvUdpFrame, 1024),
 		ping:       100,
 	}
 	return task
 }
 
 func (self *UdpTask) CheckSendWaitData() bool {
-	if self.wait == nil {
+	if self.sendData.wait == nil {
 		return true
 	}
-	wait := self.wait
-	self.wait = nil
+	wait := self.sendData.wait
+	self.sendData.wait = nil
 	return self.SendData(wait.Bytes())
 	return true
 }
@@ -136,13 +153,13 @@ func (self *UdpTask) SendData(b []byte) bool {
 	bsize := len(b)
 	for cur := 0; cur < bsize; {
 		if self.sendData.curseq+1 == self.sendData.lastok {
-			if self.wait == nil {
-				self.wait = bytes.NewBuffer(nil)
+			if self.sendData.wait == nil {
+				self.sendData.wait = bytes.NewBuffer(nil)
 			}
-			self.wait.Write(b[cur:])
+			self.sendData.wait.Write(b[cur:])
 			return false
 		}
-		head := &UdpHeader{}
+		head := &SendUdpFrame{}
 		head.seq = self.sendData.curseq
 		offset := 0
 		if bsize >= cur+255 {
@@ -158,10 +175,10 @@ func (self *UdpTask) SendData(b []byte) bool {
 			fmt.Println("消息发送失败2", self.sendData.curseq, n, err)
 		}
 		if n == 0 {
-			if self.wait == nil {
-				self.wait = bytes.NewBuffer(nil)
+			if self.sendData.wait == nil {
+				self.sendData.wait = bytes.NewBuffer(nil)
 			}
-			self.wait.Write(b[cur:])
+			self.sendData.wait.Write(b[cur:])
 			return false
 		} else {
 			cur += offset
@@ -178,7 +195,7 @@ func (self *UdpTask) SendData(b []byte) bool {
 	}
 	return true
 }
-func (self *UdpTask) sendMsg(head *UdpHeader, force bool) (int, error) {
+func (self *UdpTask) sendMsg(head *SendUdpFrame, force bool) (int, error) {
 	if head.seq == 0 {
 		panic("ddd")
 	}
@@ -202,7 +219,7 @@ func (self *UdpTask) sendMsg(head *UdpHeader, force bool) (int, error) {
 	self.num_send++
 	return n, err
 }
-func (self *UdpTask) sendAck(head *UdpHeader) (int, error) {
+func (self *UdpTask) sendAck(head *UdpFrame) (int, error) {
 	if head.seq != 0 && head.datasize > 0 && (head.bitmask&1 == 0) {
 		fmt.Println("sendAck", head.seq, head.datasize, head.bitmask)
 		panic("ddd")
@@ -213,7 +230,7 @@ func (self *UdpTask) sendAck(head *UdpHeader) (int, error) {
 	}
 	return n, err
 }
-func (self *UdpTask) sendMsgTCP(head *UdpHeader) (int, error) {
+func (self *UdpTask) sendMsgTCP(head *UdpFrame) (int, error) {
 	n, err := self.conn_tcp.Write(head.Serialize())
 	return n, err
 }
@@ -269,7 +286,7 @@ func set_state(state byte, teststate uint16) byte {
 	state |= (0xff & (1 << (teststate % 8)))
 	return state
 }
-func (self *UdpTask) FillMaxokAckHead(head *UdpHeader) (timeout_seq uint16, need bool) {
+func (self *UdpTask) FillMaxokAckHead(head *UdpFrame) (timeout_seq uint16, need bool) {
 	now := int64(time.Now().UnixNano() / int64(time.Millisecond))
 	head.bitmask = 0
 	next := head.seq + 1
@@ -287,7 +304,7 @@ func (self *UdpTask) FillMaxokAckHead(head *UdpHeader) (timeout_seq uint16, need
 	}
 	return
 }
-func (self *UdpTask) FillLastokAckHead(head *UdpHeader) (timeout_seq uint16, need bool) {
+func (self *UdpTask) FillLastokAckHead(head *UdpFrame) (timeout_seq uint16, need bool) {
 	now := int64(time.Now().UnixNano() / int64(time.Millisecond))
 	head.datasize = 0
 	next := head.seq + 1 + 1 //不算当前,不算下一个,因为下一个必定是nil
@@ -445,7 +462,7 @@ func (self *UdpTask) Loop() {
 			timeout_seq := uint16(0)
 			timeou_need := false
 			if self.recvData.curack < self.recvData.lastok {
-				head := &UdpHeader{}
+				head := &UdpFrame{}
 				head.seq = self.recvData.lastok
 				head.bitmask |= 1
 				tmp, need := self.FillLastokAckHead(head)
@@ -465,7 +482,7 @@ func (self *UdpTask) Loop() {
 							timeout_seq = i
 						}
 						if self.recvData.header[i].seq != 0 {
-							head := &UdpHeader{}
+							head := &UdpFrame{}
 							head.seq = self.recvData.header[i].seq
 							tmp, need := self.FillMaxokAckHead(head)
 							if tmp > 0 && need {
@@ -482,7 +499,7 @@ func (self *UdpTask) Loop() {
 				}
 			}
 			if timeout_seq > 0 && timeou_need && timeout_seq != self.timeout_seq {
-				head := &UdpHeader{}
+				head := &UdpFrame{}
 				head.seq = 0
 				head.bitmask = byte(timeout_seq >> 8)
 				head.datasize = byte(timeout_seq & 0xff)
@@ -537,7 +554,7 @@ func (self *UdpTask) LoopRecvUDP() {
 		}
 		all := n + left
 		for all >= HEADLEN {
-			head := &UdpHeader{}
+			head := &RecvUdpFrame{}
 			offset := head.Unserialize(b, all)
 			if offset > 0 {
 				//fmt.Println("ReadFromUDP: ", left, n, all, int(head.datasize))
@@ -566,7 +583,7 @@ func (self *UdpTask) LoopRecvTCP() {
 		}
 		all := n + left
 		for all >= HEADLEN {
-			head := &UdpHeader{}
+			head := &RecvUdpFrame{}
 			offset := head.Unserialize(b, all)
 			if offset > 0 {
 				//fmt.Println("LoopRecvTCP: ", left, n, all, head.seq, head.datasize, head.bitmask, head.GetAllSize())

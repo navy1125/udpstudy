@@ -29,19 +29,21 @@ func main() {
 	go udptask.LoopRecvUDP()
 	udptask.LoopRecvTCP()
 	return
+	/*
 
-	tcpaddr, err := net.ResolveTCPAddr("tcp", url+":11001")
-	if err != nil {
-		fmt.Println("net.ResolveTCPAddr err:", err)
-		return
-	}
-	tcptask := udp.NewTcpTask()
-	err = tcptask.Dial(tcpaddr)
-	if err != nil {
-		fmt.Println("net.DialUDP err:", err)
-		return
-	}
-	//tcptask.Test = true
-	go tcptask.Loop()
-	tcptask.LoopRecv()
+		tcpaddr, err := net.ResolveTCPAddr("tcp", url+":11001")
+		if err != nil {
+			fmt.Println("net.ResolveTCPAddr err:", err)
+			return
+		}
+		tcptask := udp.NewTcpTask()
+		err = tcptask.Dial(tcpaddr)
+		if err != nil {
+			fmt.Println("net.DialUDP err:", err)
+			return
+		}
+		//tcptask.Test = true
+		go tcptask.Loop()
+		tcptask.LoopRecv()
+		// */
 }

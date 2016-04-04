@@ -20,17 +20,19 @@ func main() {
 	udptask.LoopRecvTCP()
 	return
 
-	tcpaddr, err := net.ResolveTCPAddr("tcp", ":11001")
-	if err != nil {
-		fmt.Println("net.ResolveTCPAddr err:", err)
-		return
-	}
-	tcptask := udp.NewTcpTask()
-	err = tcptask.Listen(tcpaddr)
-	if err != nil {
-		fmt.Println("net.Listen err:", err)
-		return
-	}
-	go tcptask.Loop()
-	tcptask.LoopRecv()
+	/*
+		tcpaddr, err := net.ResolveTCPAddr("tcp", ":11001")
+		if err != nil {
+			fmt.Println("net.ResolveTCPAddr err:", err)
+			return
+		}
+		tcptask := udp.NewTcpTask()
+		err = tcptask.Listen(tcpaddr)
+		if err != nil {
+			fmt.Println("net.Listen err:", err)
+			return
+		}
+		go tcptask.Loop()
+		tcptask.LoopRecv()
+		// */
 }
