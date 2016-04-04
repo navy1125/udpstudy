@@ -98,6 +98,7 @@ type UdpTask struct {
 	ping_max         int64
 	ping_max_seq     uint16
 	resendmax        uint16
+	timeout_seq      uint16
 }
 
 func NewUdpTask() *UdpTask {
@@ -489,12 +490,13 @@ func (self *UdpTask) Loop() {
 					}
 				}
 			}
-			if timeout_seq > 0 && timeou_need {
+			if timeout_seq > 0 && timeou_need && timeout_seq != self.timeout_seq {
 				head := &UdpHeader{}
 				head.seq = 0
 				head.bitmask = byte(timeout_seq >> 8)
 				head.datasize = byte(timeout_seq & 0xff)
 				fmt.Println("请求重发", now, timeout_seq, head.bitmask, head.datasize)
+				self.timeout_seq = timeout_seq
 				self.sendAck(head)
 			}
 		case <-timersend.C:

@@ -7,13 +7,13 @@ import (
 )
 
 var (
-	//url = "14.17.104.56"
-	url = "127.0.0.1"
+	url = "14.17.104.56"
+	//url = "127.0.0.1"
 )
 
 func main() {
 	addr_udp, err := net.ResolveUDPAddr("udp", url+":10001")
-	addr_tcp, err := net.ResolveTCPAddr("tcp", ":10002")
+	addr_tcp, err := net.ResolveTCPAddr("tcp", url+":10002")
 	if err != nil {
 		fmt.Println("net.ResolveUDPAddr err:", err)
 		return
