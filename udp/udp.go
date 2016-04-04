@@ -418,7 +418,7 @@ func (self *UdpTask) Loop() {
 			if !self.is_server {
 				fmt.Println("收数据包", now, head.seq, head.bitmask, head.datasize)
 			}
-			//self.Test = true
+			self.Test = true
 			if head.seq >= self.recvData.lastok && self.recvData.header[head.seq] == nil {
 				if (head.bitmask & 2) == 2 {
 					self.num_recv_data2++
