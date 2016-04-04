@@ -82,6 +82,7 @@ type SendUdpBuff struct {
 	maxok            uint16
 	resendmax        uint16
 	header           [65536]*SendUdpFrame
+	recvAckCh        chan *RecvUdpFrame
 	wait             *bytes.Buffer
 	num_send         int
 	num_resend       int
@@ -96,6 +97,7 @@ type RecvUdpBuff struct {
 	maxok          uint16
 	timeout_seq    uint16
 	header         [65536]*RecvUdpFrame
+	recvFrameCh    chan *RecvUdpFrame
 	num_recv_waste int
 	num_recv_data  int
 	num_recv_data2 int
@@ -109,8 +111,6 @@ type UdpTask struct {
 	addr_udp_peer *net.UDPAddr
 	sendBuff      *SendUdpBuff
 	recvBuff      *RecvUdpBuff
-	recvBuffCh    chan *RecvUdpFrame
-	recvAckCh     chan *RecvUdpFrame
 	Test          bool
 	is_server     bool
 	ping          int64
@@ -121,18 +121,18 @@ type UdpTask struct {
 func NewUdpTask() *UdpTask {
 	task := &UdpTask{
 		recvBuff: &RecvUdpBuff{
-			lastok: 1,
-			maxok:  1,
-			curack: 1,
+			lastok:      1,
+			maxok:       1,
+			curack:      1,
+			recvFrameCh: make(chan *RecvUdpFrame, 1024),
 		},
 		sendBuff: &SendUdpBuff{
-			curseq: 1,
-			lastok: 1,
-			maxok:  1,
+			curseq:    1,
+			lastok:    1,
+			maxok:     1,
+			recvAckCh: make(chan *RecvUdpFrame, 1024),
 		},
-		recvBuffCh: make(chan *RecvUdpFrame, 1024),
-		recvAckCh:  make(chan *RecvUdpFrame, 1024),
-		ping:       100,
+		ping: 100,
 	}
 	return task
 }
@@ -348,7 +348,7 @@ func (self *UdpTask) Loop() {
 	now := int64(time.Now().UnixNano() / int64(time.Millisecond))
 	for {
 		select {
-		case head := <-self.recvAckCh:
+		case head := <-self.sendBuff.recvAckCh:
 			now = int64(time.Now().UnixNano() / int64(time.Millisecond))
 			if head.seq == 0 {
 				self.sendBuff.resendmax = uint16(head.bitmask)<<8 + uint16(head.datasize)
@@ -426,7 +426,7 @@ func (self *UdpTask) Loop() {
 				}
 			}
 			self.CheckLastok()
-		case head := <-self.recvBuffCh:
+		case head := <-self.recvBuff.recvFrameCh:
 			self.Test = true
 			if head.seq >= self.recvBuff.lastok && self.recvBuff.header[head.seq] == nil {
 				if (head.bitmask & 2) == 2 {
@@ -562,9 +562,9 @@ func (self *UdpTask) LoopRecvUDP() {
 				break
 			}
 			if head.seq != 0 && head.datasize > 0 && (head.bitmask&1 == 0) {
-				self.recvBuffCh <- head
+				self.recvBuff.recvFrameCh <- head
 			} else {
-				self.recvAckCh <- head
+				self.sendBuff.recvAckCh <- head
 			}
 		}
 		left = all
@@ -594,9 +594,9 @@ func (self *UdpTask) LoopRecvTCP() {
 				if !self.is_server {
 					//fmt.Println("LoopRecvTCP: ", left, n, all, head.GetAllSize())
 				}
-				self.recvBuffCh <- head
+				self.recvBuff.recvFrameCh <- head
 			} else {
-				self.recvAckCh <- head
+				self.sendBuff.recvAckCh <- head
 			}
 		}
 		left = all
